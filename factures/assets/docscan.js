@@ -590,5 +590,22 @@
     return { sharp: varL, light: lum / g.length, blurry: varL < 60, dark: lum / g.length < 70 };
   }
 
-  G.FLPScan = { detect, warp, filter, rotate, stitch, quality, inset };
+  /* Netteté du texte, indépendante du contraste : force des contours les plus nets (2 % du haut)
+     rapportée à l'écart clair/sombre de la page. ~1 = net ; sous ~0,35 = flou. */
+  function sharpText(src) {
+    const { c } = small(src, 900), W = c.width, H = c.height;
+    const g = gray(ctx(c).getImageData(0, 0, W, H).data);
+    const hist = new Uint32Array(256); for (const v of g) hist[v]++;
+    const pct = q => { let a = 0; for (let v = 0; v < 256; v++) { a += hist[v]; if (a >= g.length * q) return v; } return 255; };
+    const lo = pct(0.03), hi = pct(0.97), light = pct(0.5);
+    const lap = new Uint16Array(1024); let n = 0;
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const p = y * W + x, l = Math.abs(4 * g[p] - g[p - 1] - g[p + 1] - g[p - W] - g[p + W]);
+      lap[Math.min(1023, l)]++; n++;
+    }
+    let a = 0, top = 0; for (let v = 1023; v >= 0; v--) { a += lap[v]; if (a >= n * 0.02) { top = v; break; } }
+    const range = Math.max(20, hi - lo);
+    return { score: top / range, light, range };
+  }
+  G.FLPScan = { detect, warp, filter, rotate, stitch, quality, inset, sharpText };
 })(window);

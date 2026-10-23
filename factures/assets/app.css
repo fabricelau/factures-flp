@@ -236,3 +236,8 @@ main{padding:6px var(--g) 0}
 .prog{position:fixed;top:0;left:0;height:3px;background:var(--acc);z-index:99;transition:width .3s}
 .progtxt{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:99;background:var(--ink3);border:1px solid var(--line);border-radius:20px;padding:5px 12px;font-size:12.5px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Hors-ligne */
+.offbar{position:sticky;top:0;z-index:60;background:#3a2f1c;color:#f3d9a8;font-size:13px;padding:8px 14px;text-align:center;border-bottom:1px solid #6b5322}
+[data-theme=light] .offbar{background:#fff3dc;color:#6b4a12;border-color:#e9c98a}
+body.offline .admin-only,body.offline #selBtn,body.offline #reviewBtn,body.offline label[for=imp],body.offline .menu-i[data-m=km],body.offline .menu-i[data-m=trash],body.offline .menu-i[data-m=settings],body.offline .sheet-foot .btn{opacity:.4;pointer-events:none}

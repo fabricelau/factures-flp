@@ -17,7 +17,9 @@
   async function api(action, data, opts = {}) {
     const init = { credentials: 'same-origin', headers: { 'X-FLP': TOKEN } };
     if (data) { init.method = 'POST'; init.body = data instanceof FormData ? data : toForm(data); }
-    const r = await fetch(API + '?a=' + action + (opts.qs || ''), init);
+    let r;
+    try { r = await fetch(API + '?a=' + action + (opts.qs || ''), init); }
+    catch (err) { const e = new Error(navigator.onLine ? 'Le site ne répond pas, réessayez dans un instant.' : 'Hors-ligne : impossible sans réseau.'); e.status = 0; e.offline = true; throw e; }
     if (r.status === 401) { location.href = BASE; throw new Error('auth'); }
     const j = await r.json().catch(() => ({ ok: false, msg: r.status === 413 ? 'Fichier trop volumineux pour le serveur.' : 'Réponse illisible du serveur (' + r.status + ').' }));
     if (j.t) TOKEN = j.t;

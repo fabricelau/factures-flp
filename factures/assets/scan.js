@@ -212,6 +212,19 @@
     await new Promise(r => setTimeout(r, 30));
     let out = S.warp(edit.src, edit.pts);
     if (edit.deg) out = S.rotate(out, edit.deg);
+    // contrôle avant envoi : texte flou ou photo trop sombre ?
+    const q = S.sharpText(out);
+    if (q.score < 0.17 || q.light < 70) {
+      busy('');
+      const blurry = q.score < 0.17;
+      const r = await C.dialog({ title: blurry ? 'Photo floue' : 'Photo trop sombre',
+        html: `<p>${blurry ? 'Le texte n’est pas net : la lecture automatique risque d’échouer et la facture d’être illisible pour le comptable.' : 'La photo manque de lumière : le texte risque d’être illisible.'}</p>
+               <p class="muted">${blurry ? 'Astuce : tenez le téléphone à deux mains, à 25–30 cm de la feuille.' : 'Astuce : allumez une lumière, approchez-vous d’une fenêtre' + (track && !$('#torch').hidden ? ' ou utilisez la lampe' : '') + '.'}</p>`,
+        buttons: [{ label: 'Garder quand même', value: 'keep' }, { label: 'Reprendre la photo', value: 'retake', primary: true }] });
+      if (r === 'retake') { edit = null; $('#eRot').querySelector('span').textContent = 'Tourner'; show('camView'); return; }
+      if (r !== 'keep') return;                      // fermé : on reste sur le réglage des coins
+      busy('Redressement de la page…');
+    }
     if (useFilter) out = S.filter(out);
     busy('');
     pages.push({ canvas: out });

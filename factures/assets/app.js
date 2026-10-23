@@ -33,9 +33,33 @@
       const d = await C.api('list');
       Object.assign(S, { items: d.items, cfg: d.cfg, learn: d.learn || [], societes: d.societes || [], dup: new Set(d.doublons || []), trash: d.trash || 0 });
       fillAdv(); render();
+      setOffline(d.offline);
+      if (!d.offline) prefetchThumbs();
       // nouvelle version installée automatiquement depuis la dernière visite
       try { const v = d.cfg.version || '', was = localStorage.getItem('flp-version'); if (v) { if (was && was !== v) C.toast('Appli mise à jour automatiquement ✓', 'ok'); localStorage.setItem('flp-version', v); } } catch (x) {}
     } catch (e) { if (e.message !== 'auth') $('#app').innerHTML = `<p class="empty">Impossible de charger les factures. ${esc(e.message)}</p>`; }
+  }
+
+  /* ===================== Hors-ligne ===================== */
+  function setOffline(off) {
+    document.body.classList.toggle('offline', !!off);
+    let bar = $('#offBar');
+    if (!off) { if (bar) bar.remove(); return; }
+    if (!bar) { bar = document.createElement('div'); bar.id = 'offBar'; bar.className = 'offbar'; document.body.prepend(bar); }
+    const when = typeof off === 'string' ? new Date(off) : null;
+    bar.textContent = 'Hors-ligne : consultation seulement' + (when && !isNaN(when) ? ' — données du ' + when.toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '') + '. Les modifications reviendront avec le réseau.';
+  }
+  window.addEventListener('online', () => { if (document.body.classList.contains('offline')) load(); });
+  window.addEventListener('offline', () => setOffline(true));
+  /* Garde les miniatures des factures récentes sur le téléphone (pour les voir sans réseau) */
+  let prefetched = false;
+  function prefetchThumbs() {
+    if (prefetched || !('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return;
+    prefetched = true;
+    const list = S.items.filter(x => x.thumb).sort((a, b) => (dOf(b) > dOf(a) ? 1 : -1)).slice(0, 150);
+    let i = 0;
+    const next = () => { if (i >= list.length || !navigator.onLine) return; fetch(thumbUrl(list[i++]), { credentials: 'same-origin' }).catch(() => {}).finally(() => setTimeout(next, 120)); };
+    setTimeout(next, 3000);
   }
 
   /* ===================== Filtres ===================== */
@@ -757,7 +781,7 @@
     const b = e.target.closest('[data-m]'); if (!b) return; menu.hidden = true;
     ({ km: addKm, export: openExport, trash: openTrash, settings: () => openSettings(),
        theme: () => C.theme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'),
-       logout: async () => { try { await C.api('logout', {}); } catch (e) {} location.href = BASE; } })[b.dataset.m]?.();
+       logout: async () => { try { await C.api('logout', {}); } catch (e) {} try { await caches.delete('flp-donnees'); } catch (e) {} location.href = BASE; } })[b.dataset.m]?.();
   });
   $('#app').addEventListener('click', e => {
     const c = e.target.closest('.card');
