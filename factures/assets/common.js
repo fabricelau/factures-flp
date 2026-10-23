@@ -174,13 +174,22 @@
 
   /* ---------- Lecture du texte d'une image (OCR) ---------- */
   let worker = null;
-  async function ocr(img, onProgress) {
-    const T = await lib('tesseract');
-    if (!worker) {
-      worker = await T.createWorker('fra', 1, { logger: m => { if (onProgress && m.status === 'recognizing text') onProgress(m.progress); } });
-    }
-    const { data } = await worker.recognize(img);
-    return data.text || '';
+  let workerP = null, progressCb = null;
+  /* Le moteur de lecture se charge une seule fois (et peut être préchauffé à l'avance) */
+  function ocrWarm() {
+    if (!workerP) workerP = lib('tesseract').then(T => T.createWorker('fra', 1, { logger: m => { if (progressCb && m.status === 'recognizing text') progressCb(m.progress); } }))
+      .catch(e => { workerP = null; throw e; });
+    return workerP;
+  }
+  let ocrChain = Promise.resolve();
+  function ocr(img, onProgress) {     // une lecture à la fois
+    const run = ocrChain.then(async () => {
+      const w = await ocrWarm();
+      progressCb = onProgress || null;
+      try { const { data } = await w.recognize(img); return data.text || ''; } finally { progressCb = null; }
+    });
+    ocrChain = run.catch(() => {});
+    return run;
   }
 
   /* ---------- Préparation complète d'un fichier avant envoi ----------
@@ -226,7 +235,7 @@
   const frDate = d => { if (!d) return 'Sans date'; const [y, m, j] = d.split('-'); return `${j}/${m}/${y}`; };
   const MOIS = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
-  G.FLPC = { api, setToken, token: () => TOKEN, dialog, alertBox, confirmBox, formBox, toast, theme, lib, pdfLib, ocr, readPdf,
+  G.FLPC = { api, setToken, token: () => TOKEN, dialog, alertBox, confirmBox, formBox, toast, theme, lib, pdfLib, ocr, ocrWarm, readPdf,
     isHeic, heicToJpeg, compress, thumbOf, loadImage, canvasToBlob, prepare, uploadForm, eur, frDate, MOIS, esc, $ };
   theme();
 })(window);

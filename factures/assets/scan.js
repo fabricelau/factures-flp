@@ -75,12 +75,21 @@
 
   /* ---------- Réglage des coins ---------- */
   function openEditor(src, keepPts) {
-    const det = keepPts ? { pts: keepPts, found: true } : S.detect(src);
-    edit = { src, pts: det.pts, deg: 0 };
-    $('#editHint').textContent = det.found ? 'Bords trouvés. Ajustez les coins si besoin.' : 'Faites glisser les 4 coins sur les bords de la feuille.';
+    // l'écran s'ouvre tout de suite, la recherche des bords suit juste après
+    edit = { src, pts: keepPts || S.inset(src.width, src.height, 0.06), deg: 0 };
+    $('#editHint').textContent = keepPts ? 'Ajustez les coins si besoin.' : 'Recherche des bords…';
     $('#eFilter').setAttribute('aria-pressed', useFilter);
     show('editView');
     requestAnimationFrame(drawEditor);
+    if (keepPts) return;
+    const mine = edit;
+    setTimeout(() => {
+      if (edit !== mine) return;
+      const det = S.detect(src);
+      if (edit !== mine) return;
+      edit.pts = det.pts; drawQuad();
+      $('#editHint').textContent = det.found ? 'Bords trouvés. Ajustez les coins si besoin.' : 'Faites glisser les 4 coins sur les bords de la feuille.';
+    }, 60);
   }
   let view = { k: 1, ox: 0, oy: 0 };
   function drawEditor() {
@@ -177,26 +186,44 @@
         }
         file = new File([pdf.output('blob')], 'facture.pdf', { type: 'application/pdf' });
       } else {
-        file = new File([await C.canvasToBlob(first, 'image/jpeg', 0.88)], 'facture.jpg', { type: 'image/jpeg' });
+        file = new File([await C.canvasToBlob(first, 'image/jpeg', 0.84)], 'facture.jpg', { type: 'image/jpeg' });
       }
       const thumb = await C.thumbOf(first);
-      let text = '';
-      if (navigator.onLine) {
-        busy('Lecture de la facture…');
-        try { text = await C.ocr(first, p => busy('Lecture de la facture… ' + Math.round(p * 100) + ' %')); } catch (e) { text = ''; }
-      }
-      const guess = text ? window.FLPExtract.extract(text, meta.learn) : null;
-      // iPhone (Safari) : un fichier rangé tel quel dans la boîte d'envoi revient parfois vide.
-      // On range donc les octets bruts, et on reconstruit le fichier au moment de l'envoi.
-      const rec = { file: await pack(file), thumb: thumb ? await pack(thumb) : null, pages: nb, text, guess, ts: Date.now() };
+      // Envoi tout de suite, SANS attendre la lecture : la facture est en sécurité sur le site
+      // en 1 à 2 secondes. La lecture se fait ensuite, en arrière-plan, et remplit les champs.
+      const ocrSrc = ocrCanvas(first);
+      const rec = { file: await pack(file), thumb: thumb ? await pack(thumb) : null, pages: nb, text: '', guess: null, ts: Date.now() };
       pages = []; pageCount();
       busy('Envoi…');
       await Outbox.add(rec);
       const sent = await flush(true);
       busy('');
-      if (sent && sent.item) openQuick(sent.item, thumb, sent.doublon);
+      if (sent && sent.item) { openQuick(sent.item, thumb, sent.doublon); readLater(sent.item.id, ocrSrc, true); }
       else { C.toast(navigator.onLine ? 'Envoi en attente, nouvel essai bientôt.' : 'Hors-ligne : la facture partira au retour du réseau.', 'ok'); show('camView'); }
     } catch (e) { busy(''); C.toast(e.message || 'Échec.', 'err'); show('camView'); }
+  }
+
+  /* Image réduite pour la lecture : plus rapide, sans perte pour le texte d'une facture */
+  function ocrCanvas(src) {
+    const k = Math.min(1, 1700 / src.width);
+    if (k >= 1) return src;
+    const c = document.createElement('canvas'); c.width = Math.round(src.width * k); c.height = Math.round(src.height * k);
+    const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(src, 0, 0, c.width, c.height);
+    return c;
+  }
+  /* Lecture en arrière-plan, puis envoi de ce qui a été lu (seuls les champs vides sont remplis) */
+  async function readLater(id, img, live) {
+    try {
+      if (live) $('#qSub').textContent = 'Lecture de la facture…';
+      const text = await C.ocr(img, p => { if (live && quickId === id) $('#qSub').textContent = 'Lecture de la facture… ' + Math.round(p * 100) + ' %'; });
+      const g = text ? window.FLPExtract.extract(text, meta.learn) : null;
+      const fd = new FormData(); fd.set('id', id); fd.set('texte', text.slice(0, 20000));
+      if (g) for (const k of ['societe', 'date', 'montant', 'categorie', 'numero', 'devise', 'ht', 'tva', 'taux_tva'])
+        if (g[k] !== undefined && g[k] !== null && g[k] !== '') fd.set(k, g[k]);
+      fd.set('doutes', g ? (g.doutes || []).join(',') : 'lecture');
+      const res = await C.api('lu', fd, { quiet: true });
+      if (quickId === id && res && res.item) fillQuick(res.item);
+    } catch (e) { if (quickId === id) $('#qSub').textContent = 'Lecture impossible : complétez à la main.'; }
   }
 
   /* ---------- Boîte d'envoi (IndexedDB) ---------- */
@@ -227,6 +254,8 @@
           const res = await C.api('upload', C.uploadForm(prep, { source: 'scan' }));
           await Outbox.remove(rec.id);
           last = res;
+          if (!wantLast && !rec.text && res.item && prep.file.type.startsWith('image/'))
+            C.loadImage(prep.file).then(im => { const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight; c.getContext('2d').drawImage(im, 0, 0); readLater(res.item.id, ocrCanvas(c), false); }).catch(() => {});
           if (!wantLast) C.toast('Facture envoyée ✓', 'ok');
         } catch (e) {
           if (e.message === 'auth') return null;
@@ -248,11 +277,19 @@
   }
   window.addEventListener('online', () => flush());
   window.addEventListener('offline', updateQueue);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) flush(); });
+  // caméra coupée dès que l'appli passe en arrière-plan (plus de voyant allumé pour rien)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopCam();
+    else { flush(); if (!$('#camView').hidden) startCam(); }
+  });
+  window.addEventListener('pagehide', stopCam);
 
   /* ---------- Validation rapide (juste après l'envoi) ---------- */
+  let quickId = null;
   function openQuick(item, thumb, doublon) {
     const f = $('#qForm');
+    quickId = item.id;
+    f.querySelectorAll('input,select').forEach(el => delete el.dataset.touched);
     f.id.value = item.id;
     f.societe.value = item.societe || '';
     const shown = item.montant_orig != null ? item.montant_orig : item.montant;   // montant dans la devise de la facture
@@ -268,6 +305,18 @@
     for (const k of ['societe', 'montant', 'date', 'categorie']) f[k].classList.toggle('doubt', (item.doutes || []).includes(k) || !f[k].value);
     show('quickView');
   }
+  $('#qForm').addEventListener('input', e => { e.target.dataset.touched = '1'; e.target.classList.remove('doubt'); });
+  /* La lecture vient de finir : on remplit ce que l'utilisateur n'a pas déjà tapé */
+  function fillQuick(item) {
+    const f = $('#qForm'), dt = item.doutes || [];
+    const put = (k, v) => { const el = f[k]; if (!el || el.dataset.touched || el.value || v == null || v === '') return; el.value = v; el.classList.toggle('doubt', dt.includes(k)); };
+    put('societe', item.societe);
+    const shown = item.montant_orig != null ? item.montant_orig : item.montant;
+    if (!f.montant.dataset.touched && !f.montant.value && shown != null) { f.montant.value = String(shown).replace('.', ','); f.dataset.devise = item.devise || 'EUR'; $('#qCur').textContent = item.devise && item.devise !== 'EUR' ? item.devise : ''; f.montant.classList.toggle('doubt', dt.includes('montant')); }
+    put('date', item.date);
+    put('categorie', item.categorie);
+    if (!$('#qTitle').textContent.includes('doublon')) $('#qSub').textContent = item.societe || item.montant != null ? 'Lu automatiquement : vérifiez, puis validez.' : 'Rien de lisible : complétez à la main.';
+  }
   $('#qForm').addEventListener('submit', async e => {
     e.preventDefault();
     const f = e.target;
@@ -276,9 +325,9 @@
       if (f.societe.value && !meta.learn.some(l => l.n === f.societe.value)) meta.learn.push({ n: f.societe.value, cat: f.categorie.value, w: [] });
       C.toast('Facture validée ✓', 'ok');
     } catch (err) { C.toast(err.message, 'err'); }
-    show('camView');
+    quickId = null; show('camView');
   });
-  $('#qLater').onclick = () => { C.toast('Elle vous attend dans « À vérifier ».'); show('camView'); };
+  $('#qLater').onclick = () => { quickId = null; C.toast('Elle vous attend dans « À vérifier ».'); show('camView'); };
 
   /* ---------- Photos ou PDF existants ---------- */
   $('#pick').addEventListener('change', async e => {
@@ -324,6 +373,8 @@
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register(BASE + 'sw.js').catch(() => {});
   C.api('meta', null, { quiet: true }).then(j => { if (j.ok) { meta = j; C.setToken(j.t); } }).catch(() => {});
+  // préchauffe le moteur de lecture pendant que l'on cadre la photo
+  setTimeout(() => { if (navigator.onLine) C.ocrWarm().catch(() => {}); }, 1200);
   show('camView');
   updateQueue(); flush();
 })();

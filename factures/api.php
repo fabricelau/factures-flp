@@ -11,7 +11,7 @@ $a = $_GET['a'] ?? '';
 $POST = $_SERVER['REQUEST_METHOD'] === 'POST';
 
 /* Actions qui modifient : réservées à l'admin, avec le jeton anti-falsification */
-$WRITE = ['upload','save','km','bulk','trash','restore','delete','rotate','replace','settings','password','update_run','dropbox_sync','partage'];
+$WRITE = ['upload','lu','save','km','bulk','trash','restore','delete','rotate','replace','settings','password','update_run','dropbox_sync','partage'];
 if (in_array($a, $WRITE, true) || $a === 'logout') {
   if (!$POST) flp_json(['ok' => false, 'msg' => 'Méthode refusée.'], 405);
   if ($a !== 'logout' && $role !== 'admin') flp_json(['ok' => false, 'msg' => 'Accès en lecture seule.'], 403);
@@ -19,7 +19,7 @@ if (in_array($a, $WRITE, true) || $a === 'logout') {
 }
 /* Taux de change récupéré AVANT de verrouiller l'index (jamais d'appel réseau pendant l'écriture) */
 $RATE_FAIL = false;
-if ($POST && in_array($a, ['upload', 'save'], true)) {
+if ($POST && in_array($a, ['upload', 'lu', 'save'], true)) {
   $dv = strtoupper(trim((string)($_POST['devise'] ?? 'EUR')));
   if (preg_match('/^[A-Z]{3}$/', $dv) && $dv !== 'EUR' && trim((string)($_POST['montant'] ?? '')) !== '') {
     $RATE_FAIL = flp_rate($dv, (string)($_POST['date'] ?? '')) === null;
@@ -148,6 +148,36 @@ if ($a === 'upload') {
   $dupe = in_array((int)$item['id'], flp_find_duplicates(flp_read()['items']), true);
   if (is_file(__DIR__ . '/dropbox.php')) { require_once __DIR__ . '/dropbox.php'; if (flp_dbx_ready()) flp_dbx_sync_item($item); }
   flp_json(['ok' => true, 'item' => $item, 'doublon' => $dupe]);
+}
+
+/* Lecture faite APRÈS l'envoi (l'appli photo envoie d'abord, lit ensuite) :
+   on ne remplit que les champs encore vides, sans écraser une saisie. */
+if ($a === 'lu') {
+  $id = (int)$in('id');
+  $res = flp_write(function (&$d) use ($id, $in) {
+    foreach ($d['items'] as &$x) {
+      if ((int)$x['id'] !== $id) continue;
+      $empty = ['societe' => $x['societe'] === '', 'date' => $x['date'] === '', 'numero' => ($x['numero'] ?? '') === '',
+                'categorie' => $x['categorie'] === '', 'montant' => $x['montant'] === null,
+                'ht' => ($x['ht'] ?? null) === null, 'tva' => ($x['tva'] ?? null) === null, 'taux_tva' => ($x['taux_tva'] ?? null) === null];
+      $empty['devise'] = $empty['montant'];
+      $saved = $_POST;
+      foreach ($empty as $k => $e) if (!$e || !array_key_exists($k, $_POST) || trim((string)$_POST[$k]) === '') unset($_POST[$k]);
+      foreach (['sens', 'note', 'paiement'] as $k) unset($_POST[$k]);
+      $filled = array_keys(array_intersect_key($_POST, $empty));
+      flp_apply_fields($x, $in, true);
+      $_POST = $saved;
+      if (($x['texte'] ?? '') === '') $x['texte'] = mb_substr($in('texte'), 0, 20000);
+      $dt = array_intersect(array_map('trim', explode(',', $in('doutes'))), FLP_DOUBT_KEYS);
+      $x['doutes'] = array_values(array_unique(array_merge(array_diff($x['doutes'] ?? [], ['lecture']), array_intersect($dt, $filled), $x['texte'] === '' ? ['lecture'] : [])));
+      $x['check'] = $x['check'] || $x['societe'] === '' || $x['montant'] === null || $x['date'] === '' || !empty($x['doutes']);
+      $x['filename'] = flp_nice_name($x);
+      return $x;
+    }
+    return null;
+  });
+  if (!$res) flp_json(['ok' => false, 'msg' => 'Facture introuvable.'], 404);
+  flp_json(['ok' => true, 'item' => $res]);
 }
 
 /* ===================================================================
