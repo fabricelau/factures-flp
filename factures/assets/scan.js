@@ -36,6 +36,7 @@
       track = stream.getVideoTracks()[0];
       const caps = track.getCapabilities ? track.getCapabilities() : {};
       $('#torch').hidden = !caps.torch;
+      if (caps.focusMode && caps.focusMode.includes('continuous')) track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
       if (caps.torch && torchOn) track.applyConstraints({ advanced: [{ torch: true }] }).catch(() => {});
       liveLoop();
     } catch (e) { $('#camErr').hidden = false; $('#cam').hidden = true; }
@@ -94,13 +95,52 @@
   function pageCount() { const n = pages.length; $('#pageCount').hidden = !n; $('#pageCount').textContent = n + (mode === 'long' ? ' morceau' : ' page') + (n > 1 ? 's' : ''); }
 
   /* ---------- Prise de vue ---------- */
-  $('#shot').onclick = () => {
-    const v = $('#cam'); if (!stream || !v.videoWidth) return;
-    const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext('2d').drawImage(v, 0, 0);
-    flash();
-    openEditor(c);
+  /* Stabilisation : au déclic, on observe ~0,7 s de vidéo et on garde l'image la plus nette.
+     Le tremblement de la main (et du doigt sur le bouton) ne dure qu'une fraction de seconde :
+     parmi 6 à 12 images, il y en a presque toujours une bien nette. */
+  let shooting = false;
+  $('#shot').onclick = async () => {
+    const v = $('#cam'); if (!stream || !v.videoWidth || shooting) return;
+    shooting = true; clearTimeout(liveT);
+    $('#shot').classList.add('busy'); $('#hint').textContent = 'Ne bougez plus…';
+    try {
+      const W = v.videoWidth, H = v.videoHeight;
+      // zone mesurée : la feuille repérée, sinon le centre de l'image
+      let x0 = W * 0.2, y0 = H * 0.2, x1 = W * 0.8, y1 = H * 0.8;
+      if (livePts) { x0 = Math.max(0, Math.min(...livePts.map(p => p.x))); x1 = Math.min(W, Math.max(...livePts.map(p => p.x))); y0 = Math.max(0, Math.min(...livePts.map(p => p.y))); y1 = Math.min(H, Math.max(...livePts.map(p => p.y))); }
+      const cw = x1 - x0, ch = y1 - y0, k = Math.min(1, 480 / Math.max(cw, ch));
+      const probe = document.createElement('canvas'); probe.width = Math.max(16, Math.round(cw * k)); probe.height = Math.max(16, Math.round(ch * k));
+      const pc = probe.getContext('2d', { willReadFrequently: true });
+      const best = document.createElement('canvas'); best.width = W; best.height = H;
+      const bc = best.getContext('2d');
+      let bestS = -1, n = 0, last = -1;
+      const t0 = performance.now();
+      const nextFrame = () => new Promise(r => v.requestVideoFrameCallback ? v.requestVideoFrameCallback(() => r()) : requestAnimationFrame(() => r()));
+      while (performance.now() - t0 < 750 && n < 14) {
+        await nextFrame();
+        if (v.currentTime === last && !v.requestVideoFrameCallback) continue;   // même image qu'avant
+        last = v.currentTime;
+        pc.drawImage(v, x0, y0, cw, ch, 0, 0, probe.width, probe.height);
+        const sh = sharpness(pc.getImageData(0, 0, probe.width, probe.height));
+        n++;
+        if (sh > bestS) { bestS = sh; bc.drawImage(v, 0, 0); }
+      }
+      if (bestS < 0) bc.drawImage(v, 0, 0);
+      flash();
+      openEditor(best);
+    } finally { shooting = false; $('#shot').classList.remove('busy'); setHint(); }
   };
+  /* netteté : énergie des contours fins (variance du laplacien) */
+  function sharpness(img) {
+    const d = img.data, W = img.width, H = img.height, g = new Float32Array(W * H);
+    for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+    let s = 0, s2 = 0, n = 0;
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const p = y * W + x, l = 4 * g[p] - g[p - 1] - g[p + 1] - g[p - W] - g[p + W];
+      s += l; s2 += l * l; n++;
+    }
+    return n ? s2 / n - (s / n) ** 2 : 0;
+  }
   function flash() {
     const f = document.createElement('div'); f.className = 'flash'; document.body.appendChild(f);
     requestAnimationFrame(() => f.style.opacity = '0'); setTimeout(() => f.remove(), 300);

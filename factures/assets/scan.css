@@ -69,3 +69,5 @@ body.scan{min-height:100svh;display:flex;flex-direction:column;background:#000;o
 .install p{margin:0;font-size:13.5px;flex:1}
 .install .x{background:none;border:0;color:var(--mute);font-size:16px;padding:6px}
 body.scan .toasts{bottom:calc(150px + env(safe-area-inset-bottom))}
+
+.shutter.busy{transform:scale(.9);box-shadow:0 0 0 4px #e3a653;transition:transform .15s}
