@@ -186,7 +186,9 @@
         try { text = await C.ocr(first, p => busy('Lecture de la facture… ' + Math.round(p * 100) + ' %')); } catch (e) { text = ''; }
       }
       const guess = text ? window.FLPExtract.extract(text, meta.learn) : null;
-      const rec = { file, thumb, pages: nb, text, guess, ts: Date.now() };
+      // iPhone (Safari) : un fichier rangé tel quel dans la boîte d'envoi revient parfois vide.
+      // On range donc les octets bruts, et on reconstruit le fichier au moment de l'envoi.
+      const rec = { file: await pack(file), thumb: thumb ? await pack(thumb) : null, pages: nb, text, guess, ts: Date.now() };
       pages = []; pageCount();
       busy('Envoi…');
       await Outbox.add(rec);
@@ -209,6 +211,9 @@
     return { add: r => tx('readwrite', s => s.add(r)), all: () => tx('readonly', s => s.getAll()), remove: id => tx('readwrite', s => s.delete(id)) };
   })();
 
+  const pack = async b => ({ buf: await b.arrayBuffer(), type: b.type || 'application/octet-stream', name: b.name || 'facture' });
+  const unpack = r => !r ? null : (r instanceof Blob ? r : r.buf ? new File([r.buf], r.name, { type: r.type }) : null);
+
   let sending = false;
   async function flush(wantLast) {
     if (sending || !navigator.onLine) { updateQueue(); return null; }
@@ -217,7 +222,8 @@
       const all = await Outbox.all();
       for (const rec of all) {
         try {
-          const prep = { file: rec.file, thumb: rec.thumb, text: rec.text, pages: rec.pages, guess: rec.guess };
+          const prep = { file: unpack(rec.file), thumb: rec.thumb ? unpack(rec.thumb) : null, text: rec.text, pages: rec.pages, guess: rec.guess };
+          if (!prep.file || !prep.file.size) { await Outbox.remove(rec.id); C.toast('Une photo était illisible sur le téléphone, merci de la reprendre.', 'err'); continue; }
           const res = await C.api('upload', C.uploadForm(prep, { source: 'scan' }));
           await Outbox.remove(rec.id);
           last = res;

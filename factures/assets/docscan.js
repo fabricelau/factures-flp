@@ -1,6 +1,6 @@
 /* =====================================================================
    Factures FLP — traitement d'image du scanner (sans bibliothèque).
-   · detect()  : trouve les 4 coins de la feuille (feuille claire sur fond sombre)
+   · detect()  : trouve les 4 coins de la feuille (fond sombre, bois, bureau clair, doigt sur un coin…)
    · warp()    : redresse la feuille (correction de perspective)
    · filter()  : filtre « document » noir et blanc, fond blanchi, texte net
    · rotate()  : rotation de 90°
@@ -38,44 +38,269 @@
     return th;
   }
 
-  /* ---------- 4 coins de la feuille ---------- */
-  function detect(src) {
-    const { c, k } = small(src, 420);
-    const W = c.width, H = c.height;
-    const g = gray(ctx(c).getImageData(0, 0, W, H).data);
-    const th = otsu(g);
-    const bin = new Uint8Array(W * H);
-    for (let i = 0; i < g.length; i++) bin[i] = g[i] > th ? 1 : 0;
-    // plus grande zone claire d'un seul tenant
-    const lab = new Int32Array(W * H); let bestLab = 0, bestN = 0, cur = 0;
-    const stack = new Int32Array(W * H);
-    for (let s = 0; s < W * H; s++) {
+  /* ---------- 4 coins de la feuille ----------
+     1. Plusieurs façons de séparer la feuille du fond (luminosité, écart à la
+        couleur du fond mesurée sur les bords de la photo, « blanc papier »
+        = clair et peu coloré) : ça marche sur fond sombre, bois, bureau clair.
+     2. Pour chacune : la plus grande zone, trous bouchés (le texte), contour.
+     3. Chaque côté est redressé en ligne droite (tirage aléatoire robuste) :
+        un doigt ou une ombre sur un coin ne le fait plus dévier, et un coin
+        caché est retrouvé à l'intersection de ses deux côtés.
+     4. On garde la meilleure, puis on la cale sur les vrais contours de la
+        feuille à plus haute définition.                                       */
+  function detect(src, opts = {}) {
+    const fast = !!opts.fast;
+    const SW = src.width || src.videoWidth, SH = src.height || src.videoHeight;
+    const def = inset(SW, SH, 0.06);
+    const { c, k } = small(src, fast ? 300 : 460);
+    const W = c.width, H = c.height, N = W * H;
+    const d = ctx(c).getImageData(0, 0, W, H).data;
+    const Lr = new Float32Array(N), Sa = new Float32Array(N), Rr = new Float32Array(N), Gg = new Float32Array(N), Bb = new Float32Array(N);
+    for (let i = 0, j = 0; j < N; i += 4, j++) {
+      const r = d[i], g = d[i + 1], b = d[i + 2], mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      Rr[j] = r; Gg[j] = g; Bb[j] = b; Lr[j] = 0.299 * r + 0.587 * g + 0.114 * b; Sa[j] = mx ? (mx - mn) / mx * 255 : 0;
+    }
+    const L = blur(blur(Lr, W, H), W, H), S = blur(Sa, W, H);
+    // couleur du fond : médiane d'une bande le long des bords de la photo
+    const ring = Math.max(2, Math.round(Math.min(W, H) * 0.035));
+    const med = arr => { const h = new Uint32Array(256); let n = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x < ring || y < ring || x >= W - ring || y >= H - ring) { h[arr[y * W + x] | 0]++; n++; } let a = 0; for (let v = 0; v < 256; v++) { a += h[v]; if (a >= n / 2) return v; } return 0; };
+    const bR = med(Rr), bG = med(Gg), bB = med(Bb), bL = 0.299 * bR + 0.587 * bG + 0.114 * bB;
+    const dist = new Float32Array(N);
+    for (let j = 0; j < N; j++) dist[j] = Math.hypot(Rr[j] - bR, Gg[j] - bG, Bb[j] - bB);
+    const D = blur(blur(dist, W, H), W, H);
+    const P = new Float32Array(N); for (let j = 0; j < N; j++) P[j] = L[j] - 1.3 * S[j];
+    const maps = [L, D, P];
+    // fond clair (bureau blanc) : la feuille est « plus claire que le fond » de peu → seuil relatif
+    if (bL > 150) { const Q = new Float32Array(N); for (let j = 0; j < N; j++) Q[j] = (L[j] - bL) - 0.8 * S[j]; maps.push(Q); }
+
+    let best = null;
+    for (const m of maps) {
+      const th = otsuF(m);
+      const bin = new Uint8Array(N);
+      for (let j = 0; j < N; j++) bin[j] = m[j] > th ? 1 : 0;
+      morph(bin, W, H, 2);
+      for (const comp of components(bin, W, H, N * 0.08)) {
+        const q = quadFrom(comp, W, H, fast);
+        if (q && (!best || q.score > best.score)) best = q;
+      }
+    }
+    if (!best || best.score < 0.55) return { pts: def, found: false, score: best ? best.score : 0 };
+    let pts = best.pts.map(p => ({ x: p.x / k, y: p.y / k }));
+    if (!fast) pts = snap(src, pts) || pts;
+    pts = pts.map(p => ({ x: Math.max(0, Math.min(SW, p.x)), y: Math.max(0, Math.min(SH, p.y)) }));
+    if (quadArea(pts) < SW * SH * 0.08) return { pts: def, found: false, score: best.score };
+    return { pts, found: true, score: best.score };
+  }
+
+  function blur(a, W, H) { // flou 3×3 rapide (séparable)
+    const t = new Float32Array(a.length), o = new Float32Array(a.length);
+    for (let y = 0; y < H; y++) { const r = y * W; for (let x = 0; x < W; x++) { const l = x ? a[r + x - 1] : a[r + x], rr = x < W - 1 ? a[r + x + 1] : a[r + x]; t[r + x] = (l + a[r + x] + rr) / 3; } }
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x, u = y ? t[i - W] : t[i], dn = y < H - 1 ? t[i + W] : t[i]; o[i] = (u + t[i] + dn) / 3; }
+    return o;
+  }
+  function otsuF(a) {
+    let mn = Infinity, mx = -Infinity; for (const v of a) { if (v < mn) mn = v; if (v > mx) mx = v; }
+    if (mx - mn < 1e-6) return mx;
+    const q = new Uint8ClampedArray(a.length), sc = 255 / (mx - mn);
+    for (let i = 0; i < a.length; i++) q[i] = (a[i] - mn) * sc;
+    return mn + otsu(q) / sc;
+  }
+  /* fermeture puis ouverture : bouche les lettres, retire les miettes */
+  function morph(bin, W, H, r) {
+    const op = (src, dil) => {
+      const t = new Uint8Array(src.length), o = new Uint8Array(src.length);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let v = dil ? 0 : 1; for (let dx = -r; dx <= r; dx++) { const xx = Math.min(W - 1, Math.max(0, x + dx)); const s = src[y * W + xx]; if (dil ? s : !s) { v = dil ? 1 : 0; break; } } t[y * W + x] = v; }
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let v = dil ? 0 : 1; for (let dy = -r; dy <= r; dy++) { const yy = Math.min(H - 1, Math.max(0, y + dy)); const s = t[yy * W + x]; if (dil ? s : !s) { v = dil ? 1 : 0; break; } } o[y * W + x] = v; }
+      return o;
+    };
+    let m = op(op(bin, true), false); m = op(op(m, false), true);
+    bin.set(m);
+  }
+  /* zones d'un seul tenant (les 2 plus grandes au-dessus d'une taille mini), trous bouchés */
+  function components(bin, W, H, minA) {
+    const N = W * H, lab = new Int32Array(N), stack = new Int32Array(N), sizes = [0];
+    let cur = 0;
+    for (let s = 0; s < N; s++) {
       if (!bin[s] || lab[s]) continue;
       cur++; let sp = 0, n = 0; stack[sp++] = s; lab[s] = cur;
       while (sp) {
-        const p = stack[--sp]; n++;
-        const x = p % W, y = (p / W) | 0;
+        const p = stack[--sp]; n++; const x = p % W;
         if (x > 0 && bin[p - 1] && !lab[p - 1]) { lab[p - 1] = cur; stack[sp++] = p - 1; }
         if (x < W - 1 && bin[p + 1] && !lab[p + 1]) { lab[p + 1] = cur; stack[sp++] = p + 1; }
-        if (y > 0 && bin[p - W] && !lab[p - W]) { lab[p - W] = cur; stack[sp++] = p - W; }
-        if (y < H - 1 && bin[p + W] && !lab[p + W]) { lab[p + W] = cur; stack[sp++] = p + W; }
+        if (p >= W && bin[p - W] && !lab[p - W]) { lab[p - W] = cur; stack[sp++] = p - W; }
+        if (p < N - W && bin[p + W] && !lab[p + W]) { lab[p + W] = cur; stack[sp++] = p + W; }
       }
-      if (n > bestN) { bestN = n; bestLab = cur; }
+      sizes.push(n);
     }
-    const def = inset(src.width || src.videoWidth, src.height || src.videoHeight, 0.06);
-    if (!bestLab || bestN < W * H * 0.12 || bestN > W * H * 0.97) return { pts: def, found: false };
-    // coins = points extrêmes selon x+y et x−y
-    let tl = [0, 0, 1e9], br = [0, 0, -1e9], tr = [0, 0, -1e9], bl = [0, 0, 1e9];
-    for (let p = 0; p < W * H; p++) {
-      if (lab[p] !== bestLab) continue;
-      const x = p % W, y = (p / W) | 0, s = x + y, d = x - y;
-      if (s < tl[2]) tl = [x, y, s]; if (s > br[2]) br = [x, y, s];
-      if (d > tr[2]) tr = [x, y, d]; if (d < bl[2]) bl = [x, y, d];
+    const ids = sizes.map((n, i) => [n, i]).filter(([n, i]) => i && n >= minA && n < N * 0.985).sort((a, b) => b[0] - a[0]).slice(0, 2).map(x => x[1]);
+    return ids.map(id => {
+      const m = new Uint8Array(N); for (let i = 0; i < N; i++) if (lab[i] === id) m[i] = 1;
+      // trous : tout ce qui n'est pas relié au bord de l'image
+      const out = new Uint8Array(N); let sp = 0;
+      const push = i => { if (!m[i] && !out[i]) { out[i] = 1; stack[sp++] = i; } };
+      for (let x = 0; x < W; x++) { push(x); push(N - W + x); } for (let y = 0; y < H; y++) { push(y * W); push(y * W + W - 1); }
+      while (sp) { const p = stack[--sp], x = p % W; if (x > 0) push(p - 1); if (x < W - 1) push(p + 1); if (p >= W) push(p - W); if (p < N - W) push(p + W); }
+      let area = 0; for (let i = 0; i < N; i++) { if (!out[i]) m[i] = 1; area += m[i]; }
+      return { m, area };
+    });
+  }
+  /* contour → enveloppe → quadrilatère → côtés redressés */
+  function quadFrom(comp, W, H, fast) {
+    const { m, area } = comp, pts = [], edgePts = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x; if (!m[i]) continue;
+      const onB = x === 0 || y === 0 || x === W - 1 || y === H - 1;
+      if (onB || !m[i - 1] || !m[i + 1] || !m[i - W] || !m[i + W]) { pts.push([x, y]); if (!onB) edgePts.push([x, y]); }
     }
-    const pts = [tl, tr, br, bl].map(([x, y]) => ({ x: x / k, y: y / k }));
-    const area = quadArea(pts), full = (W / k) * (H / k);
-    if (area < full * 0.12) return { pts: def, found: false };
-    return { pts, found: true };
+    if (pts.length < 20) return null;
+    const hull = convexHull(pts);
+    if (hull.length < 4) return null;
+    let q = bestQuad(hull);
+    if (!q) return null;
+    // deux passes : large bande (corrige un coin faussé), puis bande fine
+    const md = Math.min(W, H);
+    let inl = 0;
+    for (const band of [md * 0.09, md * 0.03]) {
+      const lines = [];
+      inl = 0;
+      for (let s = 0; s < 4; s++) {
+        const a = q[s], b = q[(s + 1) % 4];
+        const near = edgePts.filter(p => segDist(p, a, b) < band);
+        const f = ransacLine(near, Math.max(1.2, md / 220), fast ? 40 : 90);
+        if (f && f.n >= 10) { lines.push(f.line); inl += f.n; }
+        else lines.push(borderOrChord(a, b, W, H));
+      }
+      const nq = [];
+      for (let s = 0; s < 4; s++) { const p = inter(lines[(s + 3) % 4], lines[s]); nq.push(p && p.x > -W * 0.3 && p.x < W * 1.3 && p.y > -H * 0.3 && p.y < H * 1.3 ? p : q[s]); }
+      if (isConvex(nq)) q = nq;
+    }
+    const qa = quadArea(q);
+    if (qa < W * H * 0.08) return null;
+    const fill = area / qa, fillS = Math.min(fill, 1 / fill);
+    const straight = edgePts.length ? Math.min(1, inl / edgePts.length) : 1;
+    const ang = angleScore(q);
+    const frac = qa / (W * H), sizeS = frac > 0.97 ? 0.3 : 1;
+    return { pts: q, score: (0.4 * fillS + 0.35 * straight + 0.25 * ang) * sizeS };
+  }
+  function convexHull(p) {
+    p = p.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], up = [];
+    for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+    for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+    return lo.slice(0, -1).concat(up.slice(0, -1)).map(([x, y]) => ({ x, y }));
+  }
+  /* 4 sommets de l'enveloppe qui couvrent la plus grande surface, dans l'ordre haut-gauche, haut-droit, bas-droit, bas-gauche */
+  function bestQuad(h) {
+    const n = h.length;
+    let I = [0, 0, 0, 0];
+    const ext = [p => -(p.x + p.y), p => p.x - p.y, p => p.x + p.y, p => p.y - p.x];
+    ext.forEach((f, j) => { let bi = 0; for (let i = 1; i < n; i++) if (f(h[i]) > f(h[bi])) bi = i; I[j] = bi; });
+    const area = J => quadArea(J.map(i => h[i]));
+    for (let it = 0; it < 3; it++) for (let j = 0; j < 4; j++) {
+      let bi = I[j], ba = area(I);
+      for (let i = 0; i < n; i++) { const T = I.slice(); T[j] = i; const a = area(T); if (a > ba && isConvex(T.map(t => h[t]))) { ba = a; bi = i; } }
+      I[j] = bi;
+    }
+    const q = I.map(i => ({ x: h[i].x, y: h[i].y }));
+    return isConvex(q) ? order(q) : null;
+  }
+  function order(q) {
+    const cx = q.reduce((s, p) => s + p.x, 0) / 4, cy = q.reduce((s, p) => s + p.y, 0) / 4;
+    const s = q.slice().sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx)); // sens horaire (y vers le bas)
+    let tl = 0; s.forEach((p, i) => { if (p.x + p.y < s[tl].x + s[tl].y) tl = i; });
+    return [0, 1, 2, 3].map(i => s[(tl + i) % 4]);
+  }
+  function isConvex(q) {
+    let sg = 0;
+    for (let i = 0; i < 4; i++) {
+      const a = q[i], b = q[(i + 1) % 4], c = q[(i + 2) % 4];
+      const z = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+      if (Math.abs(z) < 1e-9) return false;
+      if (!sg) sg = Math.sign(z); else if (Math.sign(z) !== sg) return false;
+    }
+    return true;
+  }
+  function segDist(p, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy || 1;
+    const t = ((p[0] - a.x) * dx + (p[1] - a.y) * dy) / L2;
+    if (t < -0.08 || t > 1.08) return Infinity;
+    return Math.abs((p[0] - a.x) * dy - (p[1] - a.y) * dx) / Math.sqrt(L2);
+  }
+  /* ligne robuste : tirages au hasard (graine fixe → résultat stable), puis moindres carrés sur les bons points */
+  function ransacLine(P, tol, iters) {
+    if (P.length < 10) return null;
+    let seed = 12345; const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    let best = null, bn = 0;
+    for (let it = 0; it < iters; it++) {
+      const a = P[(rnd() * P.length) | 0], b = P[(rnd() * P.length) | 0];
+      const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy); if (L < 5) continue;
+      const nx = -dy / L, ny = dx / L, c = -(nx * a[0] + ny * a[1]);
+      let n = 0; for (const p of P) if (Math.abs(nx * p[0] + ny * p[1] + c) < tol) n++;
+      if (n > bn) { bn = n; best = [nx, ny, c]; }
+    }
+    if (!best) return null;
+    const In = P.filter(p => Math.abs(best[0] * p[0] + best[1] * p[1] + best[2]) < tol * 1.5);
+    return { line: fitLine(In) || best, n: In.length };
+  }
+  function fitLine(P) { // droite des moindres carrés (orthogonale)
+    if (P.length < 2) return null;
+    let mx = 0, my = 0; for (const p of P) { mx += p[0]; my += p[1]; } mx /= P.length; my /= P.length;
+    let sxx = 0, syy = 0, sxy = 0; for (const p of P) { const x = p[0] - mx, y = p[1] - my; sxx += x * x; syy += y * y; sxy += x * y; }
+    const th = 0.5 * Math.atan2(2 * sxy, sxx - syy), dx = Math.cos(th), dy = Math.sin(th);
+    const nx = -dy, ny = dx;
+    return [nx, ny, -(nx * mx + ny * my)];
+  }
+  function borderOrChord(a, b) { const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L; return [nx, ny, -(nx * a.x + ny * a.y)]; }
+  function inter(l1, l2) {
+    const det = l1[0] * l2[1] - l2[0] * l1[1];
+    if (Math.abs(det) < 1e-9) return null;
+    return { x: (l1[1] * l2[2] - l2[1] * l1[2]) / det, y: (l2[0] * l1[2] - l1[0] * l2[2]) / det };
+  }
+  function angleScore(q) {
+    let s = 0;
+    for (let i = 0; i < 4; i++) {
+      const a = q[(i + 3) % 4], b = q[i], c = q[(i + 1) % 4];
+      const v1x = a.x - b.x, v1y = a.y - b.y, v2x = c.x - b.x, v2y = c.y - b.y;
+      const cos = (v1x * v2x + v1y * v2y) / (Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y) || 1);
+      s += Math.max(0, 1 - Math.abs(cos) / 0.6);   // 90° → 1, au-delà de ±37° de l'angle droit → 0
+    }
+    return s / 4;
+  }
+  /* Calage fin : chaque côté est recollé sur le plus fort contraste tout près de lui, à plus haute définition */
+  function snap(src, pts) {
+    const { c, k } = small(src, 1100);
+    const W = c.width, H = c.height;
+    const g = gray(ctx(c).getImageData(0, 0, W, H).data);
+    const q = pts.map(p => ({ x: p.x * k, y: p.y * k }));
+    const R = Math.max(4, Math.round(Math.hypot(W, H) * 0.012));
+    const lines = [];
+    for (let s = 0; s < 4; s++) {
+      const a = q[s], b = q[(s + 1) % 4], dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy);
+      if (L < 20) return null;
+      const nx = -dy / L, ny = dx / L, found = [];
+      for (let t = 0.1; t <= 0.9001; t += 0.02) {
+        const px = a.x + dx * t, py = a.y + dy * t;
+        let bv = 0, bo = null;
+        for (let o = -R; o <= R; o++) {
+          const x = Math.round(px + nx * o), y = Math.round(py + ny * o);
+          const x1 = Math.round(px + nx * (o - 1.5)), y1 = Math.round(py + ny * (o - 1.5)), x2 = Math.round(px + nx * (o + 1.5)), y2 = Math.round(py + ny * (o + 1.5));
+          if (x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0 || x1 >= W || x2 >= W || y1 >= H || y2 >= H || x < 0 || y < 0 || x >= W || y >= H) continue;
+          const v = Math.abs(g[y2 * W + x2] - g[y1 * W + x1]);
+          if (v > bv) { bv = v; bo = [px + nx * o, py + ny * o]; }
+        }
+        if (bo && bv > 12) found.push(bo);
+      }
+      const f = ransacLine(found, 1.6, 80);
+      if (!f || f.n < found.length * 0.45 || f.n < 8) { lines.push(borderOrChord(a, b)); continue; }
+      lines.push(f.line);
+    }
+    const out = [];
+    for (let s = 0; s < 4; s++) {
+      const p = inter(lines[(s + 3) % 4], lines[s]);
+      if (!p || Math.hypot(p.x - q[s].x, p.y - q[s].y) > R * 2.5) out.push(q[s]); else out.push(p);
+    }
+    return isConvex(out) ? out.map(p => ({ x: p.x / k, y: p.y / k })) : null;
   }
   function inset(w, h, m) { return [{ x: w * m, y: h * m }, { x: w * (1 - m), y: h * m }, { x: w * (1 - m), y: h * (1 - m) }, { x: w * m, y: h * (1 - m) }]; }
   function quadArea(p) { let a = 0; for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; a += p[i].x * p[j].y - p[j].x * p[i].y; } return Math.abs(a) / 2; }

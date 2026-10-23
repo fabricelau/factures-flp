@@ -114,8 +114,14 @@ if ($a === 'meta') {
    ENVOI d'une pièce (photo, PDF, scan multi-pages)
    =================================================================== */
 if ($a === 'upload') {
-  if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK)
-    flp_json(['ok' => false, 'msg' => 'Fichier manquant ou trop volumineux.'], 422);
+  $err = $_FILES['file']['error'] ?? UPLOAD_ERR_NO_FILE;
+  if ($err !== UPLOAD_ERR_OK) {
+    $why = [UPLOAD_ERR_INI_SIZE => 'Fichier trop volumineux pour le serveur.', UPLOAD_ERR_FORM_SIZE => 'Fichier trop volumineux.',
+            UPLOAD_ERR_PARTIAL => 'Envoi interrompu, réessayez.', UPLOAD_ERR_NO_FILE => 'Aucun fichier reçu (photo vide).'][$err] ?? 'Envoi refusé par le serveur (code ' . (int)$err . ').';
+    // un envoi coupé n'est pas définitif : 503 pour que l'appli réessaie
+    flp_json(['ok' => false, 'msg' => $why], $err === UPLOAD_ERR_PARTIAL ? 503 : 422);
+  }
+  if (!filesize($_FILES['file']['tmp_name'])) flp_json(['ok' => false, 'msg' => 'Aucun fichier reçu (photo vide).'], 422);
   $tmp = $_FILES['file']['tmp_name'];
   if (filesize($tmp) > FLP_MAX_UPLOAD) flp_json(['ok' => false, 'msg' => 'Fichier trop volumineux (40 Mo maximum).'], 422);
   $mime = (new finfo(FILEINFO_MIME_TYPE))->file($tmp) ?: '';
