@@ -32,7 +32,8 @@ $base = flp_base_path();
 <section class="stage" id="camView">
   <video id="cam" autoplay playsinline muted></video>
   <div class="guide"><div class="frame"></div></div>
-  <div class="hint" id="hint">Posez la facture sur une surface sombre</div>
+  <svg class="live" id="live" aria-hidden="true"></svg>
+  <div class="hint" id="hint">Cadrez la facture, posée à plat</div>
   <div class="camerr" id="camErr" hidden>
     <p><b>Impossible d’ouvrir l’appareil photo.</b></p>
     <p>Autorisez la caméra pour ce site, ou choisissez une photo existante avec le bouton de gauche.</p>

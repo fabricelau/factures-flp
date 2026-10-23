@@ -144,10 +144,20 @@
       'Bureau Vallée', 'LDLC', 'Fnac', 'Darty', 'Boulanger', 'Chronopost', 'DHL', 'Colissimo', 'Amazon', 'Apple', 'Adobe', 'Google', 'Microsoft', 'O2switch',
       'RunPrint', 'Foir Fouille', 'Run Market', 'TotalEnergies', 'Engen', 'Shell', 'Vito', 'Air Austral', 'Corsair', 'Orange', 'SFR', 'Zeop', 'EDF', 'Pixieset', 'Blackmagic'];
     for (const b of brands) if (low.includes(lowNoAcc(b))) return { value: b, conf: 0.75 };
-    // 4) première ligne d'en-tête plausible
+    // 4) première ligne d'en-tête plausible — seulement si la lecture est propre
+    //    (une photo floue ou qui n'est pas une facture donne du charabia : mieux vaut un champ vide)
+    const toks = t.split(/\s+/).filter(Boolean);
+    const wordy = toks.filter(w => /^[A-Za-zÀ-ÿ'’-]{3,}[.,:;]?$/.test(w) && /[aeiouyàâéèêëîïôûù]/i.test(w)).length;
+    if (toks.length < 6 || wordy / toks.length < 0.3) return { value: '', conf: 0 };
+    const plausible = ln => {
+      const ws = ln.split(/\s+/).filter(Boolean);
+      const shortW = ws.filter(w => w.replace(/[^A-Za-zÀ-ÿ0-9]/g, '').length <= 2).length;
+      const letters = ln.replace(/[^A-Za-zÀ-ÿ]/g, '').length, chars = ln.replace(/\s/g, '').length || 1;
+      return ws.some(w => /[A-Za-zÀ-ÿ]{3,}/.test(w) && /[aeiouyàâéèêëîïôûù]/i.test(w)) && shortW / ws.length <= 0.4 && letters / chars >= 0.7;
+    };
     const lines = t.split(/\n/).map(s => s.trim()).filter(Boolean);
     for (const ln of lines.slice(0, 7)) {
-      if (ln.length >= 3 && ln.length <= 40 && /[a-zA-Zéèà]{3}/.test(ln) && !/facture|invoice|ticket|re[cç]u|devis|\d{2}[\/.]\d{2}|siret|siren|tva|www\.|@|tel|t[ée]l[ée]phone|rue|avenue|bienvenue|merci/i.test(ln)) {
+      if (ln.length >= 3 && ln.length <= 40 && /[a-zA-Zéèà]{3}/.test(ln) && plausible(ln) && !/facture|invoice|ticket|re[cç]u|devis|\d{2}[\/.]\d{2}|siret|siren|tva|www\.|@|tel|t[ée]l[ée]phone|rue|avenue|bienvenue|merci/i.test(ln)) {
         const clean = ln.replace(/[^0-9A-Za-zÀ-ÿ&'’. -]/g, '').replace(/\s+/g, ' ').trim();
         if (clean.replace(/[^A-Za-zÀ-ÿ]/g, '').length >= 3)
           return { value: clean.length > 3 && clean === clean.toUpperCase() ? clean.toLowerCase().replace(/\b\p{L}/gu, c => c.toUpperCase()) : clean, conf: 0.35 };

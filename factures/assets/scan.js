@@ -37,9 +37,39 @@
       const caps = track.getCapabilities ? track.getCapabilities() : {};
       $('#torch').hidden = !caps.torch;
       if (caps.torch && torchOn) track.applyConstraints({ advanced: [{ torch: true }] }).catch(() => {});
+      liveLoop();
     } catch (e) { $('#camErr').hidden = false; $('#cam').hidden = true; }
   }
-  function stopCam() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; track = null; } }
+  /* Contour de la feuille en direct (≈ 4 fois par seconde, sur une petite image) */
+  let liveT = null, livePts = null, liveHits = 0;
+  function liveLoop() {
+    clearTimeout(liveT);
+    if (!stream || $('#camView').hidden || document.hidden) return;
+    const v = $('#cam');
+    if (v.videoWidth) {
+      const t0 = performance.now();
+      let d = null; try { d = S.detect(v, { fast: true }); } catch (e) {}
+      const svg = $('#live'), r = v.getBoundingClientRect();
+      const k = Math.min(r.width / v.videoWidth, r.height / v.videoHeight), ox = (r.width - v.videoWidth * k) / 2, oy = (r.height - v.videoHeight * k) / 2;
+      svg.setAttribute('viewBox', `0 0 ${r.width} ${r.height}`);
+      if (d && d.found) {
+        // lissage : le contour ne tremble pas d'une image à l'autre
+        livePts = livePts ? d.pts.map((p, i) => ({ x: livePts[i].x * 0.4 + p.x * 0.6, y: livePts[i].y * 0.4 + p.y * 0.6 })) : d.pts;
+        liveHits = Math.min(liveHits + 1, 3);
+        svg.innerHTML = `<polygon points="${livePts.map(p => (p.x * k + ox).toFixed(1) + ',' + (p.y * k + oy).toFixed(1)).join(' ')}"/>`;
+        $('#camView').classList.add('has-doc');
+        if (liveHits >= 2) $('#hint').textContent = 'Feuille repérée : prenez la photo';
+      } else {
+        liveHits = Math.max(0, liveHits - 1);
+        if (!liveHits) { livePts = null; svg.innerHTML = ''; $('#camView').classList.remove('has-doc'); setHint(); }
+      }
+      const ms = performance.now() - t0;
+      liveT = setTimeout(liveLoop, Math.max(180, ms * 4));   // jamais plus de 20 % du temps du téléphone
+      return;
+    }
+    liveT = setTimeout(liveLoop, 300);
+  }
+  function stopCam() { clearTimeout(liveT); livePts = null; liveHits = 0; $('#live').innerHTML = ''; $('#camView').classList.remove('has-doc'); if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; track = null; } }
   $('#flip').onclick = () => { facing = facing === 'environment' ? 'user' : 'environment'; stopCam(); startCam(); };
   $('#torch').onclick = async () => {
     if (!track) return;
@@ -53,11 +83,14 @@
     const b = e.target.closest('[data-m]'); if (!b) return;
     mode = b.dataset.m;
     [...$('#modes').children].forEach(x => x.setAttribute('aria-pressed', x === b));
-    $('#hint').textContent = mode === 'long' ? 'Ticket long : photographiez-le en plusieurs morceaux, de haut en bas'
-      : mode === 'multi' ? 'Plusieurs pages : une photo par page, puis « Envoyer »'
-      : 'Posez la facture sur une surface sombre';
+    setHint();
     pageCount();
   });
+  function setHint() {
+    $('#hint').textContent = mode === 'long' ? 'Ticket long : photographiez-le en plusieurs morceaux, de haut en bas'
+      : mode === 'multi' ? 'Plusieurs pages : une photo par page, puis « Envoyer »'
+      : 'Cadrez la facture, posée à plat';
+  }
   function pageCount() { const n = pages.length; $('#pageCount').hidden = !n; $('#pageCount').textContent = n + (mode === 'long' ? ' morceau' : ' page') + (n > 1 ? 's' : ''); }
 
   /* ---------- Prise de vue ---------- */

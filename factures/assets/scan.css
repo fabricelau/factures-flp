@@ -6,9 +6,12 @@ body.scan{min-height:100svh;display:flex;flex-direction:column;background:#000;o
 .queue{min-width:60px;text-align:right;font-size:13px;color:var(--mute)} .queue b{color:var(--acc)}
 
 .stage{flex:1;position:relative;overflow:hidden;background:#000}
-#cam{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#cam{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.live{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.live polygon{fill:rgba(227,166,83,.18);stroke:#e3a653;stroke-width:3;stroke-linejoin:round;transition:opacity .2s}
+.stage.has-doc .frame{opacity:0}
 .guide{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center}
-.frame{width:min(80vw,420px);aspect-ratio:3/4;border:2px solid rgba(255,255,255,.75);border-radius:14px;box-shadow:0 0 0 2000px rgba(0,0,0,.3)}
+.frame{width:min(80vw,420px);aspect-ratio:3/4;border:2px dashed rgba(255,255,255,.45);border-radius:14px;transition:opacity .2s}
 .hint{position:absolute;top:14px;left:0;right:0;text-align:center;color:#fff;font-size:14px;text-shadow:0 1px 4px rgba(0,0,0,.8);padding:0 20px}
 .camerr{position:absolute;left:16px;right:16px;top:30%;text-align:center;color:#fff;background:rgba(13,17,20,.92);border:1px solid var(--line);border-radius:12px;padding:18px;font-size:14px}
 .pagecount{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:var(--acc);color:#0d1114;font-weight:700;font-size:13px;padding:6px 12px;border-radius:20px}

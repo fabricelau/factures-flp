@@ -73,7 +73,9 @@
     // fond clair (bureau blanc) : la feuille est « plus claire que le fond » de peu → seuil relatif
     if (bL > 150) { const Q = new Float32Array(N); for (let j = 0; j < N; j++) Q[j] = (L[j] - bL) - 0.8 * S[j]; maps.push(Q); }
 
-    let best = null;
+    // contours (force et direction) : servent à départager les candidats et à trouver les lignes droites
+    const E = edges(L, W, H);
+    const cands = [];
     for (const m of maps) {
       const th = otsuF(m);
       const bin = new Uint8Array(N);
@@ -81,15 +83,168 @@
       morph(bin, W, H, 2);
       for (const comp of components(bin, W, H, N * 0.08)) {
         const q = quadFrom(comp, W, H, fast);
-        if (q && (!best || q.score > best.score)) best = q;
+        if (q) cands.push(q);
       }
     }
-    if (!best || best.score < 0.55) return { pts: def, found: false, score: best ? best.score : 0 };
+    // 2e méthode, sans zones : les 4 plus longues lignes droites qui forment une feuille
+    // (utile quand le fond a presque la même teinte que le papier)
+    if (!fast) for (const q of houghQuads(E, W, H)) cands.push(q);
+    let best = null;
+    for (const q of cands) {
+      const sup = q.sup = support(q.pts, E, W, H), ang = angleScore(q.pts), af = quadArea(q.pts) / (W * H);
+      q.final = sup * (0.5 + 0.5 * ang) * (0.5 + 0.5 * Math.sqrt(af)) * (q.score != null ? 0.85 + 0.15 * q.score : 0.9);
+      if (!best || q.final > best.final) best = q;
+    }
+    if (best) best = extend(best, cands, L, S, W, H);
+    if (opts.debug) opts.debug.push(...cands.map(q => ({ pts: q.pts.map(p => ({ x: Math.round(p.x / k), y: Math.round(p.y / k) })), final: +q.final.toFixed(3), region: q.score != null ? +q.score.toFixed(3) : null, sup: +support(q.pts, E, W, H).toFixed(3) })));
+    if (!best || best.final < 0.45) return { pts: def, found: false, score: best ? best.final : 0 };
     let pts = best.pts.map(p => ({ x: p.x / k, y: p.y / k }));
     if (!fast) pts = snap(src, pts) || pts;
     pts = pts.map(p => ({ x: Math.max(0, Math.min(SW, p.x)), y: Math.max(0, Math.min(SH, p.y)) }));
-    if (quadArea(pts) < SW * SH * 0.08) return { pts: def, found: false, score: best.score };
-    return { pts, found: true, score: best.score };
+    if (quadArea(pts) < SW * SH * 0.08) return { pts: def, found: false, score: best.final };
+    return { pts, found: true, score: best.final };
+  }
+
+  /* côté posé sur un bord de la photo → la droite de ce bord */
+  function borderLine(a, b, W, H, t) {
+    if (a.x <= t && b.x <= t) return [1, 0, 0];
+    if (a.x >= W - t && b.x >= W - t) return [1, 0, -W];
+    if (a.y <= t && b.y <= t) return [0, 1, 0];
+    if (a.y >= H - t && b.y >= H - t) return [0, 1, -H];
+    return null;
+  }
+  /* force et direction des contours (Sobel) */
+  function edges(L, W, H) {
+    const N = W * H, gx = new Float32Array(N), gy = new Float32Array(N), mag = new Float32Array(N);
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      const a = L[i - W - 1], b = L[i - W], c = L[i - W + 1], d = L[i - 1], f = L[i + 1], g = L[i + W - 1], h = L[i + W], k = L[i + W + 1];
+      const X = (c + 2 * f + k) - (a + 2 * d + g), Y = (g + 2 * h + k) - (a + 2 * b + c);
+      gx[i] = X; gy[i] = Y; mag[i] = Math.hypot(X, Y);
+    }
+    // seuil : les 10 % de pixels les plus contrastés (mais jamais du bruit pur)
+    const hist = new Uint32Array(512); let mx = 0;
+    for (let i = 0; i < N; i++) if (mag[i] > mx) mx = mag[i];
+    const sc = 511 / (mx || 1);
+    for (let i = 0; i < N; i++) hist[(mag[i] * sc) | 0]++;
+    let acc = 0, th = mx;
+    for (let v = 511; v >= 0; v--) { acc += hist[v]; if (acc >= N * 0.18) { th = v / sc; break; } }
+    return { gx, gy, mag, th: Math.max(th, 10) };
+  }
+  /* part du contour du quadrilatère qui suit un vrai bord net, parallèle au côté */
+  function support(q, E, W, H) {
+    let sum = 0, mn = 1;
+    for (let s = 0; s < 4; s++) {
+      const a = q[s], b = q[(s + 1) % 4];
+      let cov;
+      if (borderLine(a, b, W, H, 2.5)) cov = 0.45;   // côté coupé par la photo : ni preuve ni contre-preuve
+      else {
+        const dx = b.x - a.x, dy = b.y - a.y, Ls = Math.hypot(dx, dy) || 1, nx = -dy / Ls, ny = dx / Ls;
+        let hit = 0, n = 0;
+        for (let t = 0.06; t <= 0.94; t += 0.022) {
+          n++;
+          const px = a.x + dx * t, py = a.y + dy * t;
+          for (let o = -2; o <= 2; o++) {
+            const x = Math.round(px + nx * o), y = Math.round(py + ny * o);
+            if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1) continue;
+            const i = y * W + x, m = E.mag[i];
+            if (m > E.th && Math.abs(E.gx[i] * nx + E.gy[i] * ny) > 0.8 * m) { hit++; break; }
+          }
+        }
+        cov = n ? hit / n : 0;
+      }
+      sum += cov; if (cov < mn) mn = cov;
+    }
+    return 0.6 * sum / 4 + 0.4 * mn;
+  }
+  /* Un candidat plus grand qui englobe le meilleur, et dont la bande en plus est du même
+     papier (marge, barre noire, tableau…), est la vraie feuille : la ligne trouvée était DANS la feuille. */
+  function extend(best, cands, L, S, W, H) {
+    const at = (x, y) => { x = Math.round(x); y = Math.round(y); return x < 0 || y < 0 || x >= W || y >= H ? -1 : y * W + x; };
+    const inside = (q, p) => { for (let s = 0; s < 4; s++) { const a = q[s], b = q[(s + 1) % 4]; if (((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) / (Math.hypot(b.x - a.x, b.y - a.y) || 1) < -3) return false; } return true; };
+    const tone = q => { const l = [], t = []; grid(q, 9, (x, y) => { const i = at(x, y); if (i >= 0) { l.push(L[i]); t.push(S[i]); } }); l.sort((u, v) => u - v); t.sort((u, v) => u - v); return [l[l.length >> 1], t[t.length >> 1]]; };
+    for (let guard = 0; guard < 4; guard++) {
+      const [pL, pS] = tone(best.pts), A0 = quadArea(best.pts);
+      let nb = null;
+      for (const c of cands) {
+        if (c === best || c.sup < 0.7 || c.sup < best.sup * 0.8) continue;
+        const A = quadArea(c.pts); if (A < A0 * 1.03) continue;
+        if (!best.pts.every(p => inside(c.pts, p))) continue;
+        let n = 0, ok = 0;
+        grid(c.pts, 24, (x, y) => { if (inside(best.pts, { x, y })) return; const i = at(x, y); if (i < 0) return; n++; if (Math.abs(L[i] - pL) < 22 && Math.abs(S[i] - pS) < 18) ok++; });
+        if (n >= 6 && ok / n >= 0.55 && (!nb || A > quadArea(nb.pts))) nb = c;
+      }
+      if (!nb) break;
+      best = nb;
+    }
+    return best;
+  }
+  function grid(q, n, fn) {
+    for (let u = 0.5 / n; u < 1; u += 1 / n) for (let v = 0.5 / n; v < 1; v += 1 / n) {
+      const tx = q[0].x + (q[1].x - q[0].x) * u, ty = q[0].y + (q[1].y - q[0].y) * u, bx = q[3].x + (q[2].x - q[3].x) * u, by = q[3].y + (q[2].y - q[3].y) * u;
+      fn(tx + (bx - tx) * v, ty + (by - ty) * v);
+    }
+  }
+  /* Transformée de Hough : grandes lignes droites → quadrilatères candidats */
+  function houghQuads(E, W, H) {
+    const nT = 120, dT = Math.PI / nT, diag = Math.ceil(Math.hypot(W, H)), nR = 2 * diag + 1;
+    const acc = new Float32Array(nT * nR), cs = new Float32Array(nT), sn = new Float32Array(nT);
+    for (let t = 0; t < nT; t++) { cs[t] = Math.cos(t * dT); sn[t] = Math.sin(t * dT); }
+    const win = 4; // ±6° autour de la direction du contour
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x, m = E.mag[i]; if (m <= E.th) continue;
+      let ph = Math.atan2(E.gy[i], E.gx[i]); if (ph < 0) ph += Math.PI; if (ph >= Math.PI) ph -= Math.PI;
+      const t0 = Math.round(ph / dT);
+      for (let dt = -win; dt <= win; dt++) {
+        const t = ((t0 + dt) % nT + nT) % nT;
+        const r = Math.round(x * cs[t] + y * sn[t]) + diag;
+        acc[t * nR + r] += 1;
+      }
+    }
+    // pics locaux
+    const peaks = [];
+    let amax = 0; for (let i = 0; i < acc.length; i++) if (acc[i] > amax) amax = acc[i];
+    const minV = Math.max(15, amax * 0.12);
+    for (let t = 0; t < nT; t++) for (let r = 1; r < nR - 1; r++) {
+      const v = acc[t * nR + r]; if (v < minV) continue;
+      let ok = true;
+      for (let dt = -3; dt <= 3 && ok; dt++) for (let dr = -4; dr <= 4; dr++) {
+        if (!dt && !dr) continue;
+        let tt = t + dt, rr = r + dr;
+        if (tt < 0) { tt += nT; rr = nR - 1 - rr; } else if (tt >= nT) { tt -= nT; rr = nR - 1 - rr; }
+        if (rr < 0 || rr >= nR) continue;
+        const w = acc[tt * nR + rr]; if (w > v || (w === v && (dt < 0 || (dt === 0 && dr < 0)))) { ok = false; break; }
+      }
+      if (ok) peaks.push({ v, th: t * dT, line: [cs[t], sn[t], -(r - diag)] });
+    }
+    peaks.sort((a, b) => b.v - a.v);
+    const L = peaks.slice(0, 22);
+    // les bords de la photo comptent aussi (feuille coupée)
+    [[1, 0, 0, 0], [1, 0, -W, 0], [0, 1, 0, Math.PI / 2], [0, 1, -H, Math.PI / 2]].forEach(b => L.push({ v: 0, th: b[3], line: [b[0], b[1], b[2]], border: true }));
+    const angD = (a, b) => { let d = Math.abs(a - b) % Math.PI; return Math.min(d, Math.PI - d); };
+    const pairs = [];
+    for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) {
+      if (L[i].border && L[j].border) continue;
+      if (angD(L[i].th, L[j].th) > 0.5) continue;                // ~ parallèles (perspective comprise)
+      const mid = { x: W / 2, y: H / 2 };
+      const di = L[i].line[0] * mid.x + L[i].line[1] * mid.y + L[i].line[2], dj = L[j].line[0] * mid.x + L[j].line[1] * mid.y + L[j].line[2];
+      const sameSide = Math.sign(di) === Math.sign(dj * (Math.cos(angD(L[i].th, L[j].th)) > 0 && Math.abs(L[i].th - L[j].th) > Math.PI / 2 ? -1 : 1));
+      void sameSide;
+      pairs.push([L[i], L[j], (L[i].th + (angD(L[i].th, L[j].th) < Math.abs(L[i].th - L[j].th) ? L[j].th + (L[j].th < L[i].th ? Math.PI : -Math.PI) : L[j].th)) / 2]);
+    }
+    const out = [];
+    for (let a = 0; a < pairs.length; a++) for (let b = a + 1; b < pairs.length; b++) {
+      const A = pairs[a], B = pairs[b];
+      const d = angD(A[2], B[2]); if (d < 0.95) continue;        // les deux familles ~ perpendiculaires
+      if ([A[0], A[1]].some(l => l === B[0] || l === B[1])) continue;
+      const P = [inter(A[0].line, B[0].line), inter(B[0].line, A[1].line), inter(A[1].line, B[1].line), inter(B[1].line, A[0].line)];
+      if (P.some(p => !p || p.x < -2 || p.y < -2 || p.x > W + 2 || p.y > H + 2)) continue;
+      if (!isConvex(P)) continue;
+      const q = order(P), ar = quadArea(q);
+      if (ar < W * H * 0.1 || ar > W * H * 0.985) continue;
+      out.push({ pts: q, score: null });
+    }
+    return out;
   }
 
   function blur(a, W, H) { // flou 3×3 rapide (séparable)
@@ -165,6 +320,8 @@
       inl = 0;
       for (let s = 0; s < 4; s++) {
         const a = q[s], b = q[(s + 1) % 4];
+        const bl = borderLine(a, b, W, H, 2.5);
+        if (bl) { lines.push(bl); continue; }        // feuille coupée par le bord de la photo
         const near = edgePts.filter(p => segDist(p, a, b) < band);
         const f = ransacLine(near, Math.max(1.2, md / 220), fast ? 40 : 90);
         if (f && f.n >= 10) { lines.push(f.line); inl += f.n; }
@@ -278,6 +435,8 @@
     for (let s = 0; s < 4; s++) {
       const a = q[s], b = q[(s + 1) % 4], dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy);
       if (L < 20) return null;
+      const bl = borderLine(a, b, W, H, Math.max(3, W * 0.006));
+      if (bl) { lines.push(bl); continue; }
       const nx = -dy / L, ny = dx / L, found = [];
       for (let t = 0.1; t <= 0.9001; t += 0.02) {
         const px = a.x + dx * t, py = a.y + dy * t;
