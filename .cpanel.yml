@@ -1,0 +1,9 @@
+---
+# Déploiement par cPanel (Git Version Control → « Deploy HEAD Commit ») :
+# copie le dossier factures/ (fichiers cachés compris, comme .htaccess) dans le site.
+# Les données ne sont jamais touchées : elles sont dans /home/litu3456/.flp-factures.
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/litu3456/public_html/fabricelauproduction-site/factures/
+    - /bin/mkdir -p $DEPLOYPATH
+    - /bin/cp -R factures/. $DEPLOYPATH
