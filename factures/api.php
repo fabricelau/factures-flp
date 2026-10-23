@@ -87,9 +87,14 @@ if ($a === 'list') {
       'categories' => FLP_CATEGORIES, 'categories_ventes' => FLP_CATEGORIES_VENTES,
       'bareme' => FLP_BAREME_KM, 'keepYears' => FLP_KEEP_YEARS, 'trashDays' => FLP_TRASH_DAYS,
       'dropbox' => $role === 'admin' && !empty($S['dropbox']['refresh']),
+      'version' => is_file(__DIR__ . '/VERSION') ? trim((string)file_get_contents(__DIR__ . '/VERSION')) : '',
     ],
   ], 200, $role === 'admin');
-  if ($role === 'admin') flp_maintenance();   // après l'envoi de la réponse : l'affichage n'attend jamais
+  if ($role === 'admin') {   // après l'envoi de la réponse : l'affichage n'attend jamais
+    flp_maintenance();
+    require_once __DIR__ . '/updater.php';
+    flp_auto_update();
+  }
   exit;
 }
 
@@ -406,7 +411,8 @@ if ($a === 'settings_get') {
   flp_json(['ok' => true, 's' => [
     'email' => $S['email'],
     'compta' => $S['compta_hash'] !== '',
-    'github_repo' => $S['github']['repo'], 'github_branch' => $S['github']['branch'] ?: 'main', 'github_token' => $S['github']['token'] !== '',
+    'github_repo' => $S['github']['repo'] !== '' ? $S['github']['repo'] : FLP_GITHUB_REPO, 'github_auto' => ($S['github']['auto'] ?? true) !== false,
+    'maj_auto' => flp_json_read('etat.json', [])['maj_auto'] ?? null, 'github_branch' => $S['github']['branch'] ?: 'main', 'github_token' => $S['github']['token'] !== '',
     'dropbox_key' => $S['dropbox']['app_key'], 'dropbox_secret' => $S['dropbox']['app_secret'] !== '',
     'dropbox_on' => $S['dropbox']['refresh'] !== '', 'dropbox_account' => $S['dropbox']['account'] ?? '', 'dropbox_folder' => $S['dropbox']['folder'] ?: '/Factures FLP',
     'last_backup' => $b ? basename(end($b)) : '', 'backups' => count($b),
@@ -425,6 +431,7 @@ if ($a === 'settings') {
            $S['compta_hash'] = password_hash($p, PASSWORD_DEFAULT); }
   }
   if (array_key_exists('github_repo', $_POST)) { $r = $in('github_repo'); if ($r !== '' && !preg_match('~^[\w.-]+/[\w.-]+$~', $r)) flp_json(['ok' => false, 'msg' => 'Dépôt : format « compte/nom ».'], 422); $S['github']['repo'] = $r; }
+  if (array_key_exists('github_auto', $_POST)) $S['github']['auto'] = $in('github_auto') === '1';
   if (array_key_exists('github_branch', $_POST)) $S['github']['branch'] = preg_replace('~[^\w./-]~', '', $in('github_branch')) ?: 'main';
   if (array_key_exists('github_token', $_POST) && $in('github_token') !== '') $S['github']['token'] = $in('github_token');
   if (($_POST['github_token_clear'] ?? '') === '1') $S['github']['token'] = '';

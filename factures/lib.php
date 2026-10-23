@@ -36,7 +36,7 @@ function flp_settings(): array {
   return flp_json_read('reglages.json', [
     'email' => FLP_OWNER_EMAIL,
     'compta_hash' => '',
-    'github' => ['repo' => '', 'branch' => 'main', 'token' => ''],
+    'github' => ['repo' => '', 'branch' => 'main', 'token' => '', 'auto' => true],
     'dropbox' => ['app_key' => '', 'app_secret' => '', 'refresh' => '', 'folder' => '/Factures FLP', 'account' => ''],
   ]);
 }

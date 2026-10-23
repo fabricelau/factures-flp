@@ -33,6 +33,8 @@
       const d = await C.api('list');
       Object.assign(S, { items: d.items, cfg: d.cfg, learn: d.learn || [], societes: d.societes || [], dup: new Set(d.doublons || []), trash: d.trash || 0 });
       fillAdv(); render();
+      // nouvelle version installée automatiquement depuis la dernière visite
+      try { const v = d.cfg.version || '', was = localStorage.getItem('flp-version'); if (v) { if (was && was !== v) C.toast('Appli mise à jour automatiquement ✓', 'ok'); localStorage.setItem('flp-version', v); } } catch (x) {}
     } catch (e) { if (e.message !== 'auth') $('#app').innerHTML = `<p class="empty">Impossible de charger les factures. ${esc(e.message)}</p>`; }
   }
 
@@ -666,6 +668,8 @@
       html: `
       <h4>Mise à jour de l’appli</h4>
       <div class="box"><div id="updState">${s.github_repo ? 'Version installée : <code>' + esc(s.version || 'première') + '</code>' : 'Pas encore reliée à GitHub.'}</div>
+        <label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="gAuto" ${s.github_auto ? 'checked' : ''}> Mettre à jour automatiquement (vérifié quand vous ouvrez l’appli)</label>
+        ${s.maj_auto ? `<small class="muted">Dernière mise à jour automatique : ${esc(new Date(s.maj_auto.quand).toLocaleString('fr-FR'))} — ${esc(s.maj_auto.msg)}</small>` : ''}
         <div class="line"><button class="btn btn-sm" id="updCheck" ${s.github_repo ? '' : 'disabled'}>Vérifier</button><button class="btn btn-sm btn-acc" id="updRun" hidden>Mettre à jour</button></div></div>
       <details ${s.github_repo ? '' : 'open'}><summary class="muted" style="margin-top:8px;cursor:pointer">Liaison GitHub</summary>
         <label class="fld">Dépôt (compte/nom)<input id="gRepo" value="${esc(s.github_repo)}" placeholder="votre-compte/factures-flp"></label>
@@ -701,6 +705,7 @@
       onOpen: (w, close) => {
         const q = s => w.querySelector(s);
         const save = async (data, msg) => { try { await C.api('settings', data); C.toast(msg || 'Enregistré.', 'ok'); close(true); openSettings(); } catch (e) { C.toast(e.message, 'err'); } };
+        q('#gAuto') && (q('#gAuto').onchange = () => save({ github_auto: q('#gAuto').checked ? '1' : '0' }, q('#gAuto').checked ? 'Mises à jour automatiques activées.' : 'Mises à jour automatiques coupées.'));
         q('#gSave') && (q('#gSave').onclick = () => save({ github_repo: q('#gRepo').value.trim(), github_branch: q('#gBranch').value.trim() || 'main', github_token: q('#gToken').value.trim() }, 'Liaison GitHub enregistrée.'));
         q('#updCheck') && (q('#updCheck').onclick = async () => {
           q('#updState').textContent = 'Vérification…';

@@ -16,6 +16,8 @@ const FLP_BASE_URL = 'https://fabricelauproduction.com/factures/';
 
 /* Adresse qui reçoit le lien « mot de passe oublié » (modifiable dans Réglages) */
 const FLP_OWNER_EMAIL = 'fabrice.ltl@gmail.com';
+/* Dépôt GitHub de l'appli : sert aux mises à jour automatiques (modifiable dans Réglages) */
+const FLP_GITHUB_REPO = 'fabricelau/factures-flp';
 const FLP_MAIL_FROM   = 'no-reply@fabricelauproduction.com';
 
 /* Dossier des données, HORS du dossier public : /home/<compte>/.flp-factures

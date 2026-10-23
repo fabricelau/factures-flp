@@ -10,7 +10,8 @@ require_once __DIR__ . '/lib.php';
 
 function flp_gh(): array {
   $g = flp_settings()['github'];
-  return [$g['repo'] ?? '', $g['branch'] ?: 'main', $g['token'] ?? ''];
+  $repo = ($g['repo'] ?? '') !== '' ? $g['repo'] : (defined('FLP_GITHUB_REPO') ? FLP_GITHUB_REPO : '');
+  return [$repo, ($g['branch'] ?? '') ?: 'main', $g['token'] ?? ''];
 }
 function flp_gh_headers(string $token): array {
   $h = ['Accept: application/vnd.github+json', 'X-GitHub-Api-Version: 2022-11-28'];
@@ -25,6 +26,14 @@ function flp_update_check(): array {
   [$repo, $branch, $token] = flp_gh();
   if ($repo === '') return ['ok' => false, 'msg' => 'Indiquez le dépôt GitHub dans Réglages.'];
   $r = flp_http("https://api.github.com/repos/$repo/commits/" . rawurlencode($branch), flp_gh_headers($token), null, 15);
+  if ($token === '' && in_array($r['code'], [403, 429], true)) {
+    // limite de l'API GitHub atteinte (serveur partagé) : on lit la branche par le protocole git, sans limite
+    $g = flp_http("https://github.com/$repo.git/info/refs?service=git-upload-pack", ['User-Agent: git/2.40'], null, 15);
+    if ($g['code'] === 200 && preg_match('~([0-9a-f]{40}) refs/heads/' . preg_quote($branch, '~') . '\b~', $g['body'], $m)) {
+      $cur = flp_version();
+      return ['ok' => true, 'current' => $cur, 'latest' => $m[1], 'up_to_date' => $cur !== '' && strncmp($m[1], $cur, strlen($cur)) === 0, 'message' => '', 'date' => ''];
+    }
+  }
   if ($r['code'] === 401 || $r['code'] === 403) return ['ok' => false, 'msg' => 'GitHub refuse l’accès : vérifiez le jeton dans Réglages.'];
   if ($r['code'] === 404) return ['ok' => false, 'msg' => 'Dépôt introuvable (ou jeton sans accès à ce dépôt).'];
   if ($r['code'] !== 200) return ['ok' => false, 'msg' => 'GitHub ne répond pas (' . ($r['code'] ?: $r['err']) . ').'];
@@ -60,6 +69,8 @@ function flp_update_run(): array {
   @mkdir($work, 0700, true);
   $zip = $work . '/code.zip';
   $r = flp_http("https://api.github.com/repos/$repo/zipball/$sha", flp_gh_headers($token), null, 120, $zip);
+  if ($token === '' && ($r['code'] !== 200 || filesize($zip) < 1000))   // dépôt public : téléchargement direct, hors API
+    $r = flp_http("https://codeload.github.com/$repo/zip/$sha", [], null, 120, $zip);
   if ($r['code'] !== 200 || !is_file($zip) || filesize($zip) < 1000) { flp_rrmdir($work); return ['ok' => false, 'msg' => 'Téléchargement impossible (' . ($r['code'] ?: $r['err']) . ').']; }
 
   $z = new ZipArchive();
@@ -118,4 +129,26 @@ function flp_restore_code(string $bk, array $before): void {
   foreach (flp_list_files(__DIR__) as $rel) {
     if (substr($rel, -4) === '.maj' || !isset($was[$rel])) @unlink(__DIR__ . '/' . $rel);
   }
+}
+
+/* Mise à jour automatique : vérifiée au plus toutes les 15 minutes, quand l'appli est ouverte
+   (après l'envoi de la page, donc sans jamais ralentir l'affichage). */
+function flp_auto_update(): void {
+  $S = flp_settings();
+  if (($S['github']['auto'] ?? true) === false) return;
+  [$repo] = flp_gh(); if ($repo === '') return;
+  $e = flp_json_read('etat.json', []);
+  if (time() - (int)($e['maj_vu'] ?? 0) < 900) return;
+  $lock = @fopen(flp_data_dir() . '/maj.lock', 'c');
+  if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) return;      // une autre page s'en occupe déjà
+  $e = flp_json_read('etat.json', []); $e['maj_vu'] = time(); flp_json_write('etat.json', $e);
+  @ignore_user_abort(true);
+  $chk = flp_update_check();
+  if ($chk['ok'] && !$chk['up_to_date']) {
+    $r = flp_update_run();
+    $e = flp_json_read('etat.json', []);
+    $e['maj_auto'] = ['quand' => date('c'), 'ok' => $r['ok'], 'msg' => $r['msg'], 'version' => $r['version'] ?? ''];
+    flp_json_write('etat.json', $e);
+  }
+  flock($lock, LOCK_UN); fclose($lock);
 }
