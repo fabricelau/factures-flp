@@ -1,0 +1,28 @@
+# Factures FLP — règles du dossier /factures
+# Annule l'éventuelle redirection héritée du dossier parent (voir htaccess.txt du site).
+RewriteEngine On
+
+# Force https
+RewriteCond %{HTTPS} !=on
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Le manifeste installable (servi par manifest.php)
+RewriteRule ^manifest\.webmanifest$ manifest.php [L]
+
+# Adresse courte de l'app photo : /factures/scan (et /factures/scan/)
+RewriteRule ^scan/?$ scan.php [L]
+
+# Pas d'indexation par les moteurs
+Header set X-Robots-Tag "noindex, nofollow" env=REDIRECT_STATUS
+
+# Fichiers internes : jamais appelés directement
+<FilesMatch "^(updater\.php|lib\.php|config\.php|VERSION)$|\.(maj|tmp\w*)$">
+  Require all denied
+</FilesMatch>
+
+# Page d'accueil du dossier
+DirectoryIndex index.php
+
+# Stoppe ici : aucune autre règle héritée ne s'applique
+RewriteRule ^$ index.php [L]
+RewriteRule .* - [L]
