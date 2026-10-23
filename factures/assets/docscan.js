@@ -355,23 +355,46 @@
   }
 
   /* ---------- Filtre « document » ---------- */
+  /* Mode « Document » doux : on éclaircit le papier de façon uniforme (ombres et
+     lumière inégale retirées) et on renforce un peu l'encre, sans jamais passer
+     en noir et blanc pur : texte fin, tampons, logos et couleurs restent lisibles. */
   function filter(src) {
     const w = src.width, h = src.height;
     const out = mk(w, h), oc = ctx(out);
     oc.drawImage(src, 0, 0);
     const img = oc.getImageData(0, 0, w, h), d = img.data;
-    // fond estimé : image très réduite puis ré-agrandie (moyenne locale de la lumière)
-    const bw = Math.max(8, Math.round(w / 24)), bh = Math.max(8, Math.round(h / 24));
-    const b1 = mk(bw, bh); ctx(b1).drawImage(src, 0, 0, bw, bh);
-    const b2 = mk(w, h), b2c = ctx(b2); b2c.imageSmoothingEnabled = true; b2c.imageSmoothingQuality = 'high'; b2c.drawImage(b1, 0, 0, w, h);
+    // niveau du papier : petite grille, puis on garde le plus clair du voisinage
+    // (le texte ne « noircit » donc pas l'estimation), puis on lisse et on agrandit.
+    const gw = Math.max(6, Math.round(w / 40)), gh = Math.max(6, Math.round(h / 40));
+    const g1 = mk(gw, gh), g1c = ctx(g1); g1c.drawImage(src, 0, 0, gw, gh);
+    const gd = g1c.getImageData(0, 0, gw, gh), sd = gd.data, md = new Uint8ClampedArray(sd);
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+      const o = (y * gw + x) * 4; let r = 0, g = 0, bb = 0, best = -1;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const xx = Math.min(gw - 1, Math.max(0, x + dx)), yy = Math.min(gh - 1, Math.max(0, y + dy)), q = (yy * gw + xx) * 4;
+        const l = sd[q] * 77 + sd[q + 1] * 150 + sd[q + 2] * 29;
+        if (l > best) { best = l; r = sd[q]; g = sd[q + 1]; bb = sd[q + 2]; }
+      }
+      md[o] = r; md[o + 1] = g; md[o + 2] = bb; md[o + 3] = 255;
+    }
+    gd.data.set(md); g1c.putImageData(gd, 0, 0);
+    const b2 = mk(w, h), b2c = ctx(b2); b2c.imageSmoothingEnabled = true; b2c.imageSmoothingQuality = 'high';
+    b2c.filter = 'blur(' + Math.round(Math.max(w, h) / 60) + 'px)';
+    b2c.drawImage(g1, 0, 0, w, h);
     const bg = b2c.getImageData(0, 0, w, h).data;
+    const curve = new Float32Array(256);
+    for (let i = 0; i < 256; i++) {               // courbe douce : papier → blanc, encre un peu plus sombre, gris conservés
+      const v = i / 255;
+      let o = v >= 0.93 ? 1 : v / 0.93;
+      o = Math.pow(o, 1.5);
+      curve[i] = o * 255;
+    }
     for (let i = 0; i < d.length; i += 4) {
-      const g = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
-      const bgv = Math.max(40, (bg[i] * 77 + bg[i + 1] * 150 + bg[i + 2] * 29) >> 8);
-      let v = Math.min(1, g / bgv * 1.08);         // 1 = papier blanc
-      v = v > 0.9 ? 1 : Math.pow(Math.max(0, (v - 0.25) / 0.65), 1.6); // fond blanc, encre bien noire
-      const o = Math.round(v * 255);
-      d[i] = d[i + 1] = d[i + 2] = o;
+      for (let c = 0; c < 3; c++) {
+        const ref = Math.max(70, bg[i + c]);
+        const v = Math.min(255, d[i + c] * Math.min(2.4, 245 / ref));
+        d[i + c] = curve[v | 0];
+      }
     }
     oc.putImageData(img, 0, 0);
     return out;
