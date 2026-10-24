@@ -808,7 +808,7 @@
         <div class="line">${s.dropbox_on ? '<button class="btn btn-sm" id="dSync">Copier maintenant</button><button class="btn btn-sm btn-del" id="dOff">Déconnecter</button>' : `<button class="btn btn-sm btn-acc" id="dOn" ${s.dropbox_key && s.dropbox_secret ? '' : 'disabled'}>Connecter Dropbox</button>`}</div></div>
       ${s.dropbox_on ? '' : `<details ${s.dropbox_key ? '' : 'open'}><summary class="muted" style="margin-top:8px;cursor:pointer">Clés de l’application Dropbox</summary>
         <div class="box"><ol><li>Ouvrez <b>dropbox.com/developers/apps</b> → « Create app ».</li><li>Choisissez « Scoped access », puis <b>« Full Dropbox »</b> pour pouvoir choisir n’importe quel dossier (ou « App folder » pour tout ranger dans <i>Applications/…</i>). Nommez-la (ex. <i>Factures FLP</i>).</li>
-        <li>Onglet <b>Permissions</b> : cochez <code>files.content.write</code> et <code>files.content.read</code>, puis « Submit ».</li>
+        <li>Onglet <b>Permissions</b> : cochez <code>files.metadata.read</code>, <code>files.content.read</code> et <code>files.content.write</code>, puis « Submit ».</li>
         <li>Onglet <b>Settings</b> : dans « Redirect URIs », ajoutez <code>${esc(redirect)}</code>.</li><li>Copiez « App key » et « App secret » ci-dessous, enregistrez, puis « Connecter Dropbox ».</li></ol></div>
         <div class="row2"><label class="fld">App key<input id="dKey" value="${esc(s.dropbox_key)}" autocomplete="off"></label>
         <label class="fld">App secret<input id="dSecret" type="password" placeholder="${s.dropbox_secret ? '•••••• enregistré' : ''}" autocomplete="off"></label></div>
