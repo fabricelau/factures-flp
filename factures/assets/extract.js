@@ -61,35 +61,55 @@
     const re = /(?:€|eur|euros?|\$)?\s*(-?(?:\d{1,3}(?:[ .\u00a0',]\d{3})+|\d+)[.,]\d{2})(?!\d)\s*(?:€|eur|euros?|ttc|\$)?/gi;
     let m;
     while ((m = re.exec(s))) {
+      if (/^\s*%/.test(s.slice(m.index + m[0].length)) || /%\s*$/.test(m[0])) continue;   // un taux (2,10 %), pas un montant
       const r0 = m[1]; let raw = r0.slice(0, -3).replace(/[ .\u00a0',]/g, '') + '.' + r0.slice(-2);  // séparateur décimal = avant les 2 derniers chiffres
       const v = parseFloat(raw);
       if (!isNaN(v) && Math.abs(v) > 0 && Math.abs(v) < 1e7) out.push(Math.round(v * 100) / 100);
     }
     return out;
   }
+  /* Montant TTC : chaque montant du ticket reçoit des points (libellé, répétition, cohérence HT + TVA,
+     ligne de paiement…) et le mieux noté l'emporte. Résiste aux erreurs de lecture d'un libellé. */
   function findAmount(t) {
-    const lines = t.split(/\n/);
-    let best = null, conf = 0;
-    lines.forEach((ln, i) => {
-      const l = lowNoAcc(ln);
-      let w = 0;
-      if (/net a payer|total ttc|montant ttc|total a payer|a regler|montant du|total du|total eur|ttc\b/.test(l)) w = 0.92;
-      else if (/\btotal\b|montant/.test(l) && !/\bht\b|tva|sous.?total|hors taxe/.test(l)) w = 0.75;
-      else if (/^\s*(cb|carte|paiement|regle|especes)/.test(l)) w = 0.6;
-      if (!w) return;
-      let nums = amountsIn(ln);
-      if (!nums.length && lines[i + 1]) nums = amountsIn(lines[i + 1]);
-      if (!nums.length) return;
-      const v = Math.max(...nums);
-      if (w > conf || (w === conf && v > best)) { best = v; conf = w; }
+    const lines = t.split(/\n/), L = lines.map(lowNoAcc);
+    const STRONG = /net a payer|t[o0]t[a@]l\s*[:.]?\s*t\.?\s*[t1i]\.?\s*[ce]\b|montant\s*t\.?t\.?c|t[o0]tal\s*a\s*payer|a\s*regler|reste\s*(a\s*payer|du)|montant\s*du|t[o0]tal\s*du|t[o0]tal\s*eur/;
+    const PAY = /^\s*(cb|c\.b|carte|visa|mastercard|paiement|regle|especes|cheque|sans contact|montant regle)\b/;
+    const BAD = /rendu|monnaie|a rendre|sous.?total|remise|acompte|avoir|economie|fidelite|unit|prix u/;
+    const HTL = /\bh\.?t\.?\b|hors tax/, TVAL = /\btva\b|t\.v\.a/;
+    const cands = [];
+    let ht = null, tva = null;
+    L.forEach((l, i) => {
+      const nums = amountsIn(lines[i]);
+      if (HTL.test(l) && !/ttc/.test(l) && nums.length && ht === null) ht = nums[nums.length - 1];
+      if (TVAL.test(l) && !/intracom|n[°o]|fr\d{2}|ttc/.test(l) && nums.length && tva === null) tva = Math.min(...nums);
+      nums.forEach((v, k) => cands.push({ v, i, last: k === nums.length - 1, n: nums.length }));
     });
-    if (best != null) return { value: best, conf };
-    const all = amountsIn(t);
-    if (all.length) return { value: Math.max(...all), conf: 0.35 };
-    return { value: null, conf: 0 };
+    if (!cands.length) return { value: null, conf: 0 };
+    const count = {}; for (const c of cands) count[c.v] = (count[c.v] || 0) + 1;
+    const maxV = Math.max(...cands.map(c => c.v));
+    // en-tête de tableau « HT TVA TTC » : le dernier montant de la ligne suivante est le TTC
+    const ttcCol = new Set(); L.forEach((l, i) => { if (/\bttc\b/.test(l) && HTL.test(l) && !amountsIn(lines[i]).length) ttcCol.add(i + 1); });
+    let best = null;
+    for (const c of cands) {
+      const l = L[c.i], prev = c.i > 0 ? L[c.i - 1] : '';
+      let s = 0;
+      if (STRONG.test(l)) s += 3;
+      else if (STRONG.test(prev) && !amountsIn(lines[c.i - 1]).length) s += 2.4;     // libellé seul sur la ligne d'avant
+      else if (/\bt[o0]tal\b|montant/.test(l) && !HTL.test(l) && !TVAL.test(l)) s += 1.5;
+      if (PAY.test(l)) s += 1.2;
+      if (ttcCol.has(c.i) && c.last) s += 1.5;
+      if (/\bttc\b/.test(l) && c.last) s += 0.6;
+      s += Math.min(2.4, (count[c.v] - 1) * 0.8);                                  // le total revient souvent (TTC, paiement…)
+      if (ht != null && tva != null && Math.abs(ht + tva - c.v) < 0.02 && c.v > ht) s += 2;
+      if (c.v === maxV) s += 0.5;
+      if (BAD.test(l)) s -= 3;
+      if ((HTL.test(l) || TVAL.test(l)) && !/ttc/.test(l) && !ttcCol.has(c.i)) s -= 1.5;
+      if (c.v <= 0) s -= 5;
+      if (!best || s > best.s || (s === best.s && c.v > best.v)) best = { v: c.v, s };
+    }
+    const conf = best.s >= 4 ? 0.92 : best.s >= 2.5 ? 0.8 : best.s >= 1.5 ? 0.7 : 0.4;
+    return { value: best.v, conf };
   }
-
-  /* ---------- HT, TVA et taux (8,5 % et 2,1 % à La Réunion, 20 / 10 / 5,5 % en métropole) ---------- */
   function findVat(t, ttc) {
     const l = lowNoAcc(t);
     let taux = null, m;
@@ -102,6 +122,22 @@
       if (ht === null && /(total|montant)?\s*h\.?t\.?\b|hors tax/.test(x) && !/ttc/.test(x)) { const n = amountsIn(ln); if (n.length) ht = Math.max(...n); }
       if (tva === null && /\btva\b|t\.v\.a/.test(x) && !/n[°o]|intracom|numero|fr\d{2}/.test(x)) { const n = amountsIn(ln).filter(v => !rates.includes(v)); if (n.length) tva = Math.min(...n); }
     }
+    // ligne de tableau « taux  HT  TVA  TTC » (ex. 2,10 % 7,06 € 0,14 € 7,20 €) : la plus fiable car cohérente en elle-même
+    if (ttc != null) for (const ln of t.split('\n')) {
+      const n = amountsIn(ln); if (n.length < 3) continue;
+      const c = n[n.length - 1]; if (Math.abs(c - ttc) > 0.011) continue;
+      let hit = null;
+      for (let i = 0; i < n.length - 1 && !hit; i++) for (let j = 0; j < n.length - 1; j++) if (i !== j && n[i] > n[j] && Math.abs(n[i] + n[j] - c) < 0.015) { hit = [n[i], n[j]]; break; }
+      if (hit) {
+        ht = hit[0]; tva = hit[1];
+        const pm = ln.match(/(\d{1,2}(?:[.,]\d{1,2})?)\s?%/); if (pm) { const v = parseFloat(pm[1].replace(',', '.')); if (rates.includes(v)) taux = v; }
+        break;
+      }
+    }
+    // HT lu de travers (7,06 → 1,06 ou 71,06) : incohérent avec le TTC → recalculé avec le taux
+    if (ttc != null && ht != null && (ht >= ttc || (tva != null && Math.abs(ht + tva - ttc) > 0.05)) && taux) {
+      ht = Math.round(ttc / (1 + taux / 100) * 100) / 100; tva = Math.round((ttc - ht) * 100) / 100;
+    } else if (ttc != null && ht != null && ht >= ttc) { ht = null; tva = null; }
     if (ttc != null) {
       if (ht != null && tva == null && ht < ttc) tva = Math.round((ttc - ht) * 100) / 100;
       if (tva != null && ht == null && tva < ttc) ht = Math.round((ttc - tva) * 100) / 100;
@@ -156,11 +192,22 @@
     const look = byLook(vh, learn);
     const fromLook = () => ({ value: look.e.n, conf: look.d < 0.08 ? 0.88 : 0.7, cat: look.e.cat, e: look.e });
     if (look && look.d < 0.08) return fromLook();
+    // 2 ter) en-tête « type de commerce + nom » (BOULANGERIE BURHANI, GARAGE DU PORT, SARL …) : c'est le vrai nom
+    const head = t.split(/\n/).map(x => x.trim()).filter(Boolean).slice(0, 10);
+    const SHOP = /^(boulangerie|patisserie|restaurant|brasserie|snack|pizzeria|cafe|bar|boucherie|charcuterie|traiteur|epicerie|superette|supermarche|hypermarche|magasin|boutique|librairie|pharmacie|garage|station|carrosserie|hotel|imprimerie|quincaillerie|sarl|sas|sasu|eurl|ets|etablissements|societe|ste)\b/;
+    for (const ln of head) {
+      const l0 = lowNoAcc(ln).replace(/[^a-z0-9&' -]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (SHOP.test(l0) && l0.split(' ').length >= 2 && l0.length <= 40) {
+        const clean = ln.replace(/[^0-9A-Za-zÀ-ÿ&'’. -]/g, '').replace(/\s+/g, ' ').trim();
+        return { value: clean === clean.toUpperCase() ? clean.toLowerCase().replace(/(^|[\s'’-])\p{L}/gu, c => c.toUpperCase()) : clean, conf: 0.72 };
+      }
+    }
     // 3) enseignes courantes
     const brands = ['Promocash', 'Carrefour', 'E.Leclerc', 'Leclerc', 'Super U', 'Leader Price', 'Score', 'Jumbo', 'Decathlon', 'Leroy Merlin', 'Mr Bricolage',
       'Bureau Vallée', 'LDLC', 'Fnac', 'Darty', 'Boulanger', 'Chronopost', 'DHL', 'Colissimo', 'Amazon', 'Apple', 'Adobe', 'Google', 'Microsoft', 'O2switch',
       'RunPrint', 'Foir Fouille', 'Run Market', 'TotalEnergies', 'Engen', 'Shell', 'Vito', 'Air Austral', 'Corsair', 'Orange', 'SFR', 'Zeop', 'EDF', 'Pixieset', 'Blackmagic'];
-    for (const b of brands) if (low.includes(lowNoAcc(b))) return { value: b, conf: 0.75 };
+    // mot entier seulement : « Boulanger » ne doit pas sortir de « BOULANGERIE »
+    for (const b of brands) { const k = lowNoAcc(b).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); if (new RegExp('(^|[^a-z0-9])' + k + '(?![a-z0-9])').test(low)) return { value: b, conf: 0.75 }; }
     if (look) return fromLook();
     // 4) première ligne d'en-tête plausible — seulement si la lecture est propre
     //    (une photo floue ou qui n'est pas une facture donne du charabia : mieux vaut un champ vide)
