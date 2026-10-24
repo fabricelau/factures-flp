@@ -2,7 +2,7 @@
    Réseau d'abord, copie en cache pour le hors-ligne : plus jamais de vieille
    version bloquée, et l'appli photo s'ouvre même sans réseau (les photos
    attendent alors dans la boîte d'envoi du téléphone). */
-const CACHE = 'flp-v2';
+const CACHE = 'flp-v3';
 const DATA = 'flp-donnees';        // dernière liste, miniatures, factures ouvertes : consultation hors-ligne
 const MAX_FILES = 200;
 
@@ -22,6 +22,10 @@ self.addEventListener('fetch', e => {
     if (/cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net/.test(url.host)) {
       e.respondWith(caches.match(req).then(c => c || fetch(req).then(r => { const cp = r.clone(); caches.open(CACHE).then(ca => ca.put(req, cp)); return r; })));
     }
+    return;
+  }
+  if (/\/f\/\d+\//.test(url.pathname)) {               // fichier d'une facture (adresse parlante)
+    if (!url.searchParams.has('dl')) e.respondWith(fileNetFirst(req));
     return;
   }
   if (url.searchParams.has('a')) {
@@ -76,7 +80,7 @@ async function fileNetFirst(req) {
   }
 }
 async function trim(ca) {
-  const ks = (await ca.keys()).filter(k => /[?&]a=file/.test(k.url));
+  const ks = (await ca.keys()).filter(k => /[?&]a=file|\/f\/\d+\//.test(k.url));
   for (let i = 0; i < ks.length - MAX_FILES; i++) await ca.delete(ks[i]);
 }
 self.addEventListener('message', e => { if (e.data === 'flp-oublier') caches.delete(DATA); });

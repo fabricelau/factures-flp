@@ -11,6 +11,8 @@ RewriteRule ^manifest\.webmanifest$ manifest.php [L]
 
 # Adresse courte de l'app photo : /factures/scan (et /factures/scan/)
 RewriteRule ^scan/?$ scan.php [L]
+# Fichier d'une facture sous son vrai nom : /factures/f/12/2026-10-24_vito_68,10_12.pdf
+RewriteRule ^f/(\d+)/[^/]*$ api.php?a=file&id=$1 [QSA,L]
 # Écran de lancement de l'appli installée : /factures/accueil
 RewriteRule ^accueil/?$ accueil.php [L]
 

@@ -22,7 +22,9 @@
   const byId = id => S.items.find(x => +x.id === +id);
   const cats = sens => sens === 'vente' ? S.cfg.categories_ventes : S.cfg.categories;
   const thumbUrl = x => `${API}?a=thumb&id=${x.id}&r=${x.rot || 0}`;
-  const fileUrl = (x, dl) => `${API}?a=file&id=${x.id}&r=${x.rot || 0}${dl ? '&dl=1' : ''}`;
+  // adresse « parlante » : le fichier s'ouvre et se télécharge sous son vrai nom (date_fournisseur_montant.pdf)
+  const fileName = x => x.filename || `facture-${x.id}.${x.ext || 'pdf'}`;
+  const fileUrl = (x, dl) => `${BASE}f/${x.id}/${encodeURIComponent(fileName(x))}?r=${x.rot || 0}${dl ? '&dl=1' : ''}`;
   const num = v => { const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')); return isNaN(n) ? null : n; };
   const ymd = d => d.toISOString().slice(0, 10);
   const dOf = x => x.date || (x.added || '').slice(0, 10);

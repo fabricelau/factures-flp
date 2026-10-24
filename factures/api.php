@@ -352,7 +352,7 @@ if ($a === 'file' || $a === 'thumb') {
   header('Content-Length: ' . filesize($p));
   header('X-Content-Type-Options: nosniff');
   $name = flp_nice_name($x);
-  header('Content-Disposition: ' . (($_GET['dl'] ?? '') === '1' ? 'attachment' : 'inline') . '; filename="' . $name . '"');
+  header('Content-Disposition: ' . (($_GET['dl'] ?? '') === '1' ? 'attachment' : 'inline') . '; filename="' . str_replace('"', '', $name) . '"; filename*=UTF-8\'\'' . rawurlencode($name));
   readfile($p);
   exit;
 }
