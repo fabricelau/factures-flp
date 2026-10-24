@@ -43,6 +43,25 @@
     } catch (e) { if (e.message !== 'auth') $('#app').innerHTML = `<p class="empty">Impossible de charger les factures. ${esc(e.message)}</p>`; }
   }
 
+  /* ===================== Export d'une seule facture ===================== */
+  // iPhone : feuille de partage (Enregistrer dans Fichiers, Mail, AirDrop, WhatsApp…) ; ailleurs : téléchargement
+  async function shareOne(x) {
+    try {
+      progress('Préparation…');
+      const blob = await fetch(fileUrl(x), { credentials: 'same-origin' }).then(r => { if (!r.ok) throw new Error('Fichier introuvable.'); return r.blob(); });
+      const name = fileName(x);
+      const file = new File([blob], name, { type: blob.type || (x.ext === 'pdf' ? 'application/pdf' : 'image/jpeg') });
+      progress('');
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: name }); } catch (e) { if (e.name !== 'AbortError') throw e; }
+        return;
+      }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    } catch (e) { progress(''); C.toast(e.message || 'Export impossible.', 'err'); }
+  }
+  document.addEventListener('click', e => { const b = e.target.closest('[data-share]'); if (!b) return; const x = S.items.find(i => +i.id === +b.dataset.share); if (x) shareOne(x); });
+
   /* ===================== Hors-ligne ===================== */
   function setOffline(off) {
     document.body.classList.toggle('offline', !!off);
@@ -132,7 +151,7 @@
         const [y, m] = k.split('-');
         html += `<section class="month${S.closed[k] ? ' closed' : ''}" data-k="${k}">
           <div class="month-h"><h2>${k === '0000-00' ? 'Sans date' : MOIS[+m] + ' ' + y}</h2><span class="n">${g.length} facture${g.length > 1 ? 's' : ''}</span>
-          <span class="tot">${eur(tot)}</span><svg class="car" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+          <span class="tot">${eur(tot)}</span>${k !== '0000-00' ? `<button class="mexp" data-mexp="${k}" title="Exporter ce mois" aria-label="Exporter ${MOIS[+m]} ${y}"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></button>` : ''}<svg class="car" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
           <div class="${cls}">${g.map(card).join('')}</div></section>`;
       }
       app.innerHTML = html;
@@ -287,7 +306,7 @@
     $('#sheetView').innerHTML = sheetView(x);
     $('#sheetTools').hidden = !ADMIN || x.type === 'km';
     $('#sheetTools').querySelectorAll('[data-act^=rot]').forEach(b => b.hidden = !['jpg', 'png', 'webp', 'pdf'].includes(x.ext));
-    const f = $('#sheetForm'); f.innerHTML = fieldHTML(x, !ADMIN) + `<p class="sheet-meta">${x.source === 'scan' ? 'Scannée' : x.source === 'partage' ? 'Partagée' : x.source === 'saisie' ? 'Saisie' : 'Importée'} le ${frDate((x.added || '').slice(0, 10))}${x.ext ? ` · <a href="${fileUrl(x, true)}">Télécharger l’original</a>` : ''}${x.dbx ? ' · copiée dans Dropbox' : ''}</p>`;
+    const f = $('#sheetForm'); f.innerHTML = (x.ext ? `<button type="button" class="btn btn-share" data-share="${x.id}"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Exporter cette facture</button>` : '') + fieldHTML(x, !ADMIN) + `<p class="sheet-meta">${x.source === 'scan' ? 'Scannée' : x.source === 'partage' ? 'Partagée' : x.source === 'saisie' ? 'Saisie' : 'Importée'} le ${frDate((x.added || '').slice(0, 10))}${x.ext ? ` · <a href="${fileUrl(x, true)}">Télécharger</a>` : ''}${x.dbx ? ' · copiée dans Dropbox' : ''}</p>`;
     bindForm(f, x);
     $('#sheet').hidden = false;
     $('#sheetView').onclick = () => { if (x.type !== 'km') openViewer(visible(), visible().findIndex(y => +y.id === +x.id)); };
@@ -540,13 +559,19 @@
     if (key === 'lastyear') return f(D(y - 1, 0, 1), D(y - 1, 11, 31));
     return { from: '', to: '' };
   }
-  async function openExport() {
-    const p0 = periodOf('lastmonth');
+  async function openExport(pre = {}) {
+    const p0 = pre.from ? pre : periodOf('lastmonth');
+    const years = [...new Set(S.items.map(x => dOf(x).slice(0, 4)).filter(Boolean))].sort().reverse();
+    if (!years.length) years.push(String(new Date().getFullYear()));
+    const now = new Date(), curMon = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
     const r = await C.dialog({ title: 'Exporter pour le comptable', wide: true,
       html: `<label class="fld">Période<select name="per">
+          <option value="pickmonth">Un mois au choix</option><option value="pickyear">Une année entière</option>
           <option value="lastmonth">Mois dernier</option><option value="month">Ce mois</option><option value="lastquarter">Trimestre dernier</option>
           <option value="quarter">Ce trimestre</option><option value="lastyear">Année dernière</option><option value="year">Cette année</option><option value="custom">Dates au choix</option><option value="all">Tout</option></select></label>
-        <div class="row2"><label class="fld">Du<input type="date" name="from" value="${p0.from}"></label><label class="fld">Au<input type="date" name="to" value="${p0.to}"></label></div>
+        <label class="fld" id="exMon">Mois<input type="month" name="mon" value="${pre.mon || curMon}"></label>
+        <label class="fld" id="exYr">Année<select name="yr">${years.map(y => `<option ${y === pre.yr ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
+        <div class="row2" id="exDates"><label class="fld">Du<input type="date" name="from" value="${p0.from}"></label><label class="fld">Au<input type="date" name="to" value="${p0.to}"></label></div>
         <label class="fld">Factures<select name="sens"><option value="">Reçues et émises</option><option value="achat">Reçues seulement</option><option value="vente">Émises seulement</option></select></label>
         <label class="fld">Format<select name="fmt">
           <option value="zip">ZIP : toutes les pièces renommées + tableau</option><option value="xlsx">Excel (.xlsx)</option>
@@ -557,14 +582,20 @@
       onOpen: w => {
         const per = w.querySelector('[name=per]'), from = w.querySelector('[name=from]'), to = w.querySelector('[name=to]');
         const count = () => { const L = exportItems(from.value, to.value, w.querySelector('[name=sens]').value); w.querySelector('#exN').textContent = `${L.length} facture(s) · ${eur(L.reduce((s, x) => s + (x.montant || 0), 0))}`; };
-        per.onchange = () => { if (per.value !== 'custom') { const p = periodOf(per.value); from.value = p.from; to.value = p.to; } count(); };
+        const mon = w.querySelector('[name=mon]'), yr = w.querySelector('[name=yr]');
+        const vis = () => { w.querySelector('#exMon').hidden = per.value !== 'pickmonth'; w.querySelector('#exYr').hidden = per.value !== 'pickyear'; w.querySelector('#exDates').hidden = per.value === 'pickmonth' || per.value === 'pickyear'; };
+        const fromMon = () => { const [y, m] = (mon.value || curMon).split('-').map(Number); from.value = ymd(new Date(Date.UTC(y, m - 1, 1))); to.value = ymd(new Date(Date.UTC(y, m, 0))); };
+        const fromYr = () => { from.value = yr.value + '-01-01'; to.value = yr.value + '-12-31'; };
+        per.onchange = () => { if (per.value === 'pickmonth') fromMon(); else if (per.value === 'pickyear') fromYr(); else if (per.value !== 'custom') { const p = periodOf(per.value); from.value = p.from; to.value = p.to; } vis(); count(); };
+        mon.onchange = () => { fromMon(); count(); }; yr.onchange = () => { fromYr(); count(); };
+        per.value = pre.per || 'pickmonth'; if (!pre.from) { if (per.value === 'pickmonth') fromMon(); } vis();
         [from, to, w.querySelector('[name=sens]')].forEach(el => el.addEventListener('change', () => { if (el !== w.querySelector('[name=sens]')) per.value = 'custom'; count(); }));
         count();
       } });
     if (!r) return;
     const list = exportItems(r.from, r.to, r.sens);
     if (!list.length) return C.toast('Aucune facture sur cette période.', 'err');
-    const label = `${r.from || 'debut'}_${r.to || 'fin'}`;
+    const label = r.per === 'pickmonth' ? (r.mon || r.from.slice(0, 7)) : r.per === 'pickyear' ? r.yr : `${r.from || 'debut'}_${r.to || 'fin'}`;
     try {
       if (r.fmt === 'zip') {
         const qs = new URLSearchParams({ a: 'zip', from: r.from, to: r.to, sens: r.sens });
@@ -798,6 +829,8 @@
       if (S.selecting) { const id = +c.dataset.id; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); c.classList.toggle('sel'); updSel(); return; }
       return openSheet(c.dataset.id);
     }
+    const mx = e.target.closest('[data-mexp]');
+    if (mx) { const [y, m] = mx.dataset.mexp.split('-').map(Number); return openExport({ per: 'pickmonth', mon: mx.dataset.mexp, from: ymd(new Date(Date.UTC(y, m - 1, 1))), to: ymd(new Date(Date.UTC(y, m, 0))) }); }
     const h = e.target.closest('.month-h');
     if (h) { const k = h.parentElement.dataset.k; S.closed[k] = !S.closed[k]; h.parentElement.classList.toggle('closed'); }
   });
