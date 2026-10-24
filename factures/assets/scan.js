@@ -278,13 +278,14 @@
       // Envoi tout de suite, SANS attendre la lecture : la facture est en sécurité sur le site
       // en 1 à 2 secondes. La lecture se fait ensuite, en arrière-plan, et remplit les champs.
       const ocrSrc = ocrCanvas(first);
-      const rec = { file: await pack(file), thumb: thumb ? await pack(thumb) : null, pages: nb, text: '', guess: null, ts: Date.now() };
+      const vh = await C.vhash(first);     // empreinte du logo / de l'en-tête
+      const rec = { file: await pack(file), thumb: thumb ? await pack(thumb) : null, pages: nb, text: '', guess: null, vh, ts: Date.now() };
       pages = []; pageCount();
       busy('Envoi…');
       await Outbox.add(rec);
       const sent = await flush(true);
       busy('');
-      if (sent && sent.item) { openQuick(sent.item, thumb, sent.doublon); readLater(sent.item.id, ocrSrc, true); }
+      if (sent && sent.item) { openQuick(sent.item, thumb, sent.doublon); readLater(sent.item.id, ocrSrc, true, vh); }
       else { C.toast(navigator.onLine ? 'Envoi en attente, nouvel essai bientôt.' : 'Hors-ligne : la facture partira au retour du réseau.', 'ok'); show('camView'); }
     } catch (e) { busy(''); C.toast(e.message || 'Échec.', 'err'); show('camView'); }
   }
@@ -298,11 +299,11 @@
     return c;
   }
   /* Lecture en arrière-plan, puis envoi de ce qui a été lu (seuls les champs vides sont remplis) */
-  async function readLater(id, img, live) {
+  async function readLater(id, img, live, vh) {
     try {
       if (live) $('#qSub').textContent = 'Lecture de la facture…';
       const text = await C.ocr(img, p => { if (live && quickId === id) $('#qSub').textContent = 'Lecture de la facture… ' + Math.round(p * 100) + ' %'; });
-      const g = text ? window.FLPExtract.extract(text, meta.learn) : null;
+      const g = text || vh ? window.FLPExtract.extract(text, meta.learn, { vh }) : null;
       const fd = new FormData(); fd.set('id', id); fd.set('texte', text.slice(0, 20000));
       if (g) for (const k of ['societe', 'date', 'montant', 'categorie', 'numero', 'devise', 'ht', 'tva', 'taux_tva'])
         if (g[k] !== undefined && g[k] !== null && g[k] !== '') fd.set(k, g[k]);
@@ -335,13 +336,13 @@
       const all = await Outbox.all();
       for (const rec of all) {
         try {
-          const prep = { file: unpack(rec.file), thumb: rec.thumb ? unpack(rec.thumb) : null, text: rec.text, pages: rec.pages, guess: rec.guess };
+          const prep = { file: unpack(rec.file), thumb: rec.thumb ? unpack(rec.thumb) : null, text: rec.text, pages: rec.pages, guess: rec.guess, vh: rec.vh || '' };
           if (!prep.file || !prep.file.size) { await Outbox.remove(rec.id); C.toast('Une photo était illisible sur le téléphone, merci de la reprendre.', 'err'); continue; }
           const res = await C.api('upload', C.uploadForm(prep, { source: 'scan' }));
           await Outbox.remove(rec.id);
           last = res;
           if (!wantLast && !rec.text && res.item && prep.file.type.startsWith('image/'))
-            C.loadImage(prep.file).then(im => { const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight; c.getContext('2d').drawImage(im, 0, 0); readLater(res.item.id, ocrCanvas(c), false); }).catch(() => {});
+            C.loadImage(prep.file).then(im => { const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight; c.getContext('2d').drawImage(im, 0, 0); readLater(res.item.id, ocrCanvas(c), false, rec.vh); }).catch(() => {});
           if (!wantLast) C.toast('Facture envoyée ✓', 'ok');
         } catch (e) {
           if (e.message === 'auth') return null;

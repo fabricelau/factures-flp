@@ -199,22 +199,23 @@
      réduites, PDF lus (texte + miniature de la 1re page), images lues. */
   async function prepare(file, { learn, onStep } = {}) {
     const step = s => onStep && onStep(s);
-    let f = file, thumb = null, text = '', pages = 1;
+    let f = file, thumb = null, text = '', pages = 1, vh = '';
     if (isHeic(f)) { step('Conversion de la photo iPhone…'); try { f = await heicToJpeg(f); } catch (e) { /* le serveur gardera le HEIC */ } }
     if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '')) {
       step('Lecture du PDF…');
       try {
         const r = await readPdf(f);
-        pages = r.pages; thumb = await thumbOf(r.canvas); text = r.text;
+        pages = r.pages; thumb = await thumbOf(r.canvas); text = r.text; vh = await vhash(r.canvas);
         if (text.replace(/\s/g, '').length < 30) { step('PDF scanné : lecture de l’image…'); text = await ocr(r.canvas); }
       } catch (e) { console.warn(e); }
     } else if (/^image\//.test(f.type)) {
       f = await compress(f);
+      vh = await vhash(f);
       step('Lecture de la facture…');
       try { text = await ocr(f); } catch (e) { console.warn(e); }
     }
-    const guess = text && G.FLPExtract ? G.FLPExtract.extract(text, learn || []) : null;
-    return { file: f, thumb, text, pages, guess };
+    const guess = (text || vh) && G.FLPExtract ? G.FLPExtract.extract(text, learn || [], { vh }) : null;
+    return { file: f, thumb, text, pages, guess, vh };
   }
 
   /* Formulaire d'envoi à partir d'une préparation */
@@ -223,6 +224,7 @@
     fd.set('file', prep.file, prep.file.name || 'facture');
     if (prep.thumb) fd.set('thumb', prep.thumb, 'thumb.jpg');
     fd.set('pages', prep.pages || 1);
+    if (prep.vh) fd.set('vh', prep.vh);
     const g = prep.guess || {};
     for (const k of ['societe', 'date', 'montant', 'categorie', 'numero', 'devise', 'ht', 'tva', 'taux_tva', 'sens'])
       if (g[k] !== undefined && g[k] !== null && g[k] !== '') fd.set(k, g[k]);
@@ -237,7 +239,63 @@
   const frDate = d => { if (!d) return 'Sans date'; const [y, m, j] = d.split('-'); return `${j}/${m}/${y}`; };
   const MOIS = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
-  G.FLPC = { api, setToken, token: () => TOKEN, dialog, alertBox, confirmBox, formBox, toast, theme, lib, pdfLib, ocr, ocrWarm, readPdf,
+  /* ---------- Empreinte visuelle de l'en-tête (logo, disposition) ----------
+     La bande du haut de la facture est réduite à une mini-image 32×12 en niveaux de gris.
+     Deux factures du même fournisseur ont des mini-images très ressemblantes (même logo,
+     même disposition), même photographiées différemment ; on les compare par corrélation,
+     en tolérant un léger décalage. Gratuit, tout se fait sur le téléphone. */
+  const VW = 32, VH = 12;
+  async function vhash(src) {
+    try {
+      let img = src;
+      if (src instanceof Blob) img = await loadImage(src);
+      const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+      if (!w0 || !h0) return '';
+      const k = Math.min(1, 480 / w0), W = Math.round(w0 * k), H = Math.round(h0 * k);
+      const c = document.createElement('canvas'); c.width = W; c.height = H;
+      const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0, W, H);
+      const d = x.getImageData(0, 0, W, H).data, g = new Uint8Array(W * H);
+      for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
+      const hist = new Uint32Array(256); for (const v of g) hist[v]++;
+      let acc = 0, paper = 255; for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc > g.length * 0.3) { paper = v; break; } }
+      const ink = Math.max(0, paper - 40), minR = Math.max(2, W * 0.01);
+      // haut de l'en-tête = première ligne avec de l'encre (la marge blanche du haut ne compte pas)
+      let top = 0;
+      for (; top < H - 1; top++) { let n = 0; for (let xx = 0; xx < W; xx++) if (g[top * W + xx] < ink) n++; if (n >= minR) break; }
+      const bandH = Math.min(H - top, Math.round(W * 0.3));
+      if (bandH < 12) return '';
+      // réduction en deux temps (moyenne propre)
+      const m = document.createElement('canvas'); m.width = VW * 4; m.height = VH * 4;
+      const mx = m.getContext('2d'); mx.imageSmoothingQuality = 'high'; mx.drawImage(c, 0, top, W, bandH, 0, 0, m.width, m.height);
+      const t = document.createElement('canvas'); t.width = VW; t.height = VH;
+      const tx = t.getContext('2d', { willReadFrequently: true }); tx.imageSmoothingQuality = 'high'; tx.drawImage(m, 0, 0, VW, VH);
+      const td = tx.getImageData(0, 0, VW, VH).data;
+      let hex = '';
+      for (let i = 0; i < VW * VH; i++) { const v = (td[i * 4] * 77 + td[i * 4 + 1] * 150 + td[i * 4 + 2] * 29) >> 8; hex += (v >> 4).toString(16) + (v & 15).toString(16); }
+      return hex;
+    } catch (e) { return ''; }
+  }
+  /* écart entre deux empreintes : 0 = identiques, 1 = sans rapport (1 − meilleure corrélation, décalage ±2) */
+  function hamming(a, b) {
+    if (!a || !b || a.length !== VW * VH * 2 || b.length !== a.length) return 1;
+    const A = new Float32Array(VW * VH), B = new Float32Array(VW * VH);
+    for (let i = 0; i < VW * VH; i++) { A[i] = parseInt(a.substr(i * 2, 2), 16); B[i] = parseInt(b.substr(i * 2, 2), 16); }
+    let best = -1;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -2; dx <= 2; dx++) {
+      let n = 0, sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0;
+      for (let y = Math.max(0, dy); y < Math.min(VH, VH + dy); y++) for (let x = Math.max(0, dx); x < Math.min(VW, VW + dx); x++) {
+        const p = A[y * VW + x], q = B[(y - dy) * VW + (x - dx)];
+        n++; sa += p; sb += q; saa += p * p; sbb += q * q; sab += p * q;
+      }
+      const va = saa - sa * sa / n, vb = sbb - sb * sb / n;
+      if (va < n * 9 || vb < n * 9) continue;               // bande presque unie : pas assez d'indices
+      const r = (sab - sa * sb / n) / Math.sqrt(va * vb);
+      if (r > best) best = r;
+    }
+    return best < 0 ? 1 : 1 - best;
+  }
+
+  G.FLPC = { api, vhash, hamming, setToken, token: () => TOKEN, dialog, alertBox, confirmBox, formBox, toast, theme, lib, pdfLib, ocr, ocrWarm, readPdf,
     isHeic, heicToJpeg, compress, thumbOf, loadImage, canvasToBlob, prepare, uploadForm, eur, frDate, MOIS, esc, $ };
   theme();
 })(window);

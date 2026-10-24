@@ -120,7 +120,18 @@
   }
 
   /* ---------- Fournisseur (avec ce qui a été appris) ---------- */
-  function findCompany(t, learn) {
+  /* Reconnaissance par le logo / la disposition de l'en-tête (empreinte visuelle) */
+  function byLook(vh, learn) {
+    const H = G.FLPC && G.FLPC.hamming;
+    if (!vh || !H) return null;
+    const r = [];
+    for (const e of learn || []) { if (!e.v || !e.v.length) continue; let d = 1; for (const h of e.v) d = Math.min(d, H(vh, h)); r.push({ e, d }); }
+    r.sort((a, b) => a.d - b.d);
+    if (!r.length || r[0].d >= 0.2) return null;
+    if (r.length > 1 && r[1].d - r[0].d < 0.06) return null;      // deux fournisseurs trop ressemblants : on ne tranche pas
+    return r[0];
+  }
+  function findCompany(t, learn, vh) {
     const low = lowNoAcc(t);
     // 1) nom déjà connu présent tel quel
     let best = null;
@@ -128,7 +139,7 @@
       const k = lowNoAcc(e.n);
       if (k.length >= 3 && low.includes(k) && (!best || k.length > best.k.length)) best = { k, e };
     }
-    if (best) return { value: best.e.n, conf: 0.93, cat: best.e.cat };
+    if (best) return { value: best.e.n, conf: 0.93, cat: best.e.cat, e: best.e };
     // 2) mots typiques appris (logo illisible mais adresse, slogan… reconnus)
     const words = new Set((low.match(/[a-z]{4,}/g) || []));
     let top = null;
@@ -138,12 +149,19 @@
       const score = hit / Math.min(e.w.length, 12);
       if (hit >= 3 && (!top || score > top.score)) top = { e, score };
     }
-    if (top && top.score >= 0.35) return { value: top.e.n, conf: Math.min(0.85, 0.5 + top.score / 2), cat: top.e.cat };
+    if (top && top.score >= 0.35) return { value: top.e.n, conf: Math.min(0.85, 0.5 + top.score / 2), cat: top.e.cat, e: top.e };
+    // 2 bis) logo et disposition de l'en-tête déjà vus : quasi identiques → on fait confiance tout de suite ;
+    //       seulement ressemblants → seulement si le texte ne donne rien de mieux (en-têtes « texte seul »
+    //       de deux commerces différents peuvent se ressembler)
+    const look = byLook(vh, learn);
+    const fromLook = () => ({ value: look.e.n, conf: look.d < 0.08 ? 0.88 : 0.7, cat: look.e.cat, e: look.e });
+    if (look && look.d < 0.08) return fromLook();
     // 3) enseignes courantes
     const brands = ['Promocash', 'Carrefour', 'E.Leclerc', 'Leclerc', 'Super U', 'Leader Price', 'Score', 'Jumbo', 'Decathlon', 'Leroy Merlin', 'Mr Bricolage',
       'Bureau Vallée', 'LDLC', 'Fnac', 'Darty', 'Boulanger', 'Chronopost', 'DHL', 'Colissimo', 'Amazon', 'Apple', 'Adobe', 'Google', 'Microsoft', 'O2switch',
       'RunPrint', 'Foir Fouille', 'Run Market', 'TotalEnergies', 'Engen', 'Shell', 'Vito', 'Air Austral', 'Corsair', 'Orange', 'SFR', 'Zeop', 'EDF', 'Pixieset', 'Blackmagic'];
     for (const b of brands) if (low.includes(lowNoAcc(b))) return { value: b, conf: 0.75 };
+    if (look) return fromLook();
     // 4) première ligne d'en-tête plausible — seulement si la lecture est propre
     //    (une photo floue ou qui n'est pas une facture donne du charabia : mieux vaut un champ vide)
     const toks = t.split(/\s+/).filter(Boolean);
@@ -177,10 +195,34 @@
   }
 
   /* ---------- Tout ensemble ---------- */
-  function extract(raw, learn) {
+  /* la ligne contient-elle ce libellé ? (mots dans l'ordre, sans accents) */
+  function hasLabel(line, lbl) {
+    const l = ' ' + lowNoAcc(line).replace(/[^a-z0-9]+/g, ' ') + ' ';
+    let at = 0;
+    for (const w of lowNoAcc(lbl).split(/\s+/).filter(Boolean)) { const i = l.indexOf(' ' + w + ' ', at); if (i < 0) return false; at = i + w.length; }
+    return true;
+  }
+  function extract(raw, learn, opts = {}) {
     const t = norm(raw || '');
-    const company = findCompany(t, learn), date = findDate(t), amount = findAmount(t),
-          cur = findCurrency(t), vat = findVat(t, amount.value), num = findNumber(t);
+    const company = findCompany(t, learn, opts.vh);
+    let date = findDate(t), amount = findAmount(t);
+    // Mise en page apprise pour ce fournisseur : le bon montant / la bonne date sont sur la ligne de tel libellé
+    const e = company.e;
+    if (e && (e.tm || e.td)) {
+      const lines = t.split(/\n/);
+      if (e.tm) for (let i = lines.length - 1; i >= 0; i--) {
+        if (!hasLabel(lines[i], e.tm)) continue;
+        let a = amountsIn(lines[i]);
+        if (!a.length && lines[i + 1]) a = amountsIn(lines[i + 1]);   // montant à la ligne suivante
+        if (a.length) { amount = { value: a[a.length - 1], conf: 0.93 }; break; }
+      }
+      if (e.td) for (const ln of lines) {
+        if (!hasLabel(ln, e.td)) continue;
+        const d = findDate(ln);
+        if (d.value) { date = { value: d.value, conf: Math.max(0.9, d.conf) }; break; }
+      }
+    }
+    const cur = findCurrency(t), vat = findVat(t, amount.value), num = findNumber(t);
     // Catégorie : celle apprise pour ce fournisseur passe avant la devinette
     const cat = company.cat ? { value: company.cat, conf: 0.9 } : findCategory(t);
     const doutes = [];

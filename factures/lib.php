@@ -232,7 +232,7 @@ function flp_normalize(array $x): array {
     'ht' => null, 'tva' => null, 'taux_tva' => null, 'categorie' => '', 'numero' => '', 'note' => '',
     'paiement' => '', 'texte' => '', 'doutes' => [], 'check' => false, 'ext' => '', 'thumb' => false,
     'pages' => 1, 'filename' => '', 'source' => 'import', 'added' => '', 'trashed' => false,
-    'transmis' => '', 'hash' => '', 'km' => null, 'v' => 1,
+    'transmis' => '', 'hash' => '', 'km' => null, 'v' => 1, 'vh' => '',
   ];
 }
 
@@ -333,7 +333,7 @@ function flp_learn_words(string $text): array {
   foreach (array_slice($m[0], 0, 120) as $x) if (!isset($stop[$x])) $w[$x] = 1;
   return array_keys($w);
 }
-function flp_learn(string $societe, string $categorie, string $texte): void {
+function flp_learn(string $societe, string $categorie, string $texte, array $item = []): void {
   $societe = trim($societe);
   if ($societe === '') return;
   $L = flp_json_read('apprentissage.json', ['f' => []]);
@@ -343,8 +343,63 @@ function flp_learn(string $societe, string $categorie, string $texte): void {
   foreach (flp_learn_words($texte) as $w) $e['w'][$w] = ($e['w'][$w] ?? 0) + 1;
   arsort($e['w']);
   $e['w'] = array_slice($e['w'], 0, 60, true);
+  /* 1. empreinte visuelle de l'en-tête (logo, disposition) : les 8 plus récentes */
+  $vh = (string)($item['vh'] ?? '');
+  if (preg_match('/^[0-9a-f]{768}$/', $vh)) {
+    $v = array_values(array_filter($e['v'] ?? [], fn($h) => $h !== $vh));
+    $v[] = $vh;
+    $e['v'] = array_slice($v, -8);
+  }
+  /* 2-3. mise en page : sur quelle ligne (quel libellé) se trouvent le bon montant et la bonne date */
+  if ($texte !== '') {
+    $lines = preg_split('/\R/u', $texte);
+    if (isset($item['montant_orig']) && $item['montant_orig'] !== null) $m = (float)$item['montant_orig'];
+    else $m = isset($item['montant']) && $item['montant'] !== null ? (float)$item['montant'] : null;
+    if ($m !== null && $m > 0) {
+      $int = (string)(int)floor($m + 1e-9); $dec = sprintf('%02d', (int)round(($m - floor($m + 1e-9)) * 100));
+      $groups = array_reverse(array_map('strrev', str_split(strrev($int), 3)));   // 2563 → [2, 563]
+      $grp = implode("[ .\x{a0}']?", $groups);
+      $re = '/(?<![\d])' . $grp . '[.,]' . $dec . '(?!\d)/u';
+      $lbl = flp_tpl_label($lines, $re, '/total|net|payer|ttc|r[ée]gler|montant|du\b/iu');
+      if ($lbl !== '') { $e['t']['m'][$lbl] = ($e['t']['m'][$lbl] ?? 0) + 1; arsort($e['t']['m']); $e['t']['m'] = array_slice($e['t']['m'], 0, 3, true); }
+    }
+    $date = (string)($item['date'] ?? '');
+    if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $date, $dm)) {
+      [$y, $mo, $d] = [$dm[1], (int)$dm[2], (int)$dm[3]];
+      $sep = '[\/.\- ]';
+      $re = '/(?<!\d)(?:0?' . $d . $sep . '0?' . $mo . $sep . '(?:' . $y . '|' . substr($y, 2) . ')|' . $y . $sep . sprintf('%02d', $mo) . $sep . sprintf('%02d', $d) . ')(?!\d)/u';
+      $lbl = flp_tpl_label($lines, $re, '/date|factur|[ée]mis|le\b/iu');
+      if ($lbl !== '') { $e['t']['d'][$lbl] = ($e['t']['d'][$lbl] ?? 0) + 1; arsort($e['t']['d']); $e['t']['d'] = array_slice($e['t']['d'], 0, 3, true); }
+    }
+  }
   $L['f'][$societe] = $e;
   flp_json_write('apprentissage.json', $L);
+}
+/* Libellé (les mots juste avant la valeur) de la ligne où se trouve la valeur validée */
+function flp_tpl_label(array $lines, string $re, string $prefer): string {
+  $hits = [];
+  foreach ($lines as $ln) if (@preg_match($re, $ln, $mm, PREG_OFFSET_CAPTURE)) $hits[] = [$ln, $mm[0][1]];
+  if (!$hits) return '';
+  $pick = end($hits);
+  foreach ($hits as $h) if (preg_match($prefer, substr($h[0], 0, $h[1]))) $pick = $h;
+  $before = mb_strtolower(substr($pick[0], 0, $pick[1]));
+  $before = trim(preg_replace('/\s+/u', ' ', preg_replace('/[^a-zà-ÿ ]/u', ' ', $before)));
+  $words = array_slice(explode(' ', $before), -3);           // les 3 derniers mots suffisent
+  $lbl = trim(implode(' ', array_filter($words, fn($w) => mb_strlen($w) >= 2)));
+  return mb_strlen($lbl) >= 3 ? mb_substr($lbl, 0, 30) : '';
+}
+/* Ce que l'appli sait de chaque fournisseur, envoyé au téléphone */
+function flp_learn_public(): array {
+  $L = flp_json_read('apprentissage.json', ['f' => []]);
+  $out = [];
+  foreach ($L['f'] as $name => $e) {
+    $r = ['n' => $name, 'cat' => $e['cat'] ?? '', 'w' => array_slice(array_keys($e['w'] ?? []), 0, 25)];
+    if (!empty($e['v'])) $r['v'] = $e['v'];
+    if (!empty($e['t']['m'])) $r['tm'] = array_key_first($e['t']['m']);
+    if (!empty($e['t']['d'])) $r['td'] = array_key_first($e['t']['d']);
+    $out[] = $r;
+  }
+  return $out;
 }
 
 /* ---------- Taux de change (BCE, via frankfurter.app) ---------- */
