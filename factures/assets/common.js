@@ -150,7 +150,9 @@
       const o = hmm >= wmm ? 'p' : 'l';
       if (!pdf) pdf = new jsPDF({ unit: 'mm', format: [wmm, hmm], orientation: o, compress: true });
       else pdf.addPage([wmm, hmm], o);
-      pdf.addImage(c.toDataURL('image/jpeg', quality), 'JPEG', 0, 0, wmm, hmm, undefined, 'FAST');
+      // JPEG en binaire (plus rapide et plus léger en mémoire qu'en texte base64)
+      const jb = await canvasToBlob(c, 'image/jpeg', quality);
+      pdf.addImage(new Uint8Array(await jb.arrayBuffer()), 'JPEG', 0, 0, wmm, hmm, undefined, 'NONE');
     }
     return new File([pdf.output('blob')], name, { type: 'application/pdf' });
   }

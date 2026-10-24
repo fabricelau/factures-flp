@@ -12,6 +12,8 @@ $admin = flp_is_admin();
 <meta name="robots" content="noindex, nofollow">
 <title>Factures · <?= htmlspecialchars(FLP_SITE) ?></title>
 <meta name="theme-color" content="#0d1114">
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="icon" href="<?= $base ?>icon.php?s=64">
 <link rel="manifest" href="<?= $base ?>manifest.webmanifest">
 <link rel="apple-touch-icon" href="<?= $base ?>icon.php?s=180">

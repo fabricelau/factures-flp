@@ -48,8 +48,26 @@ function flp_dbx_rel(array $x): string {
   return ($x['sens'] === 'vente' ? 'Émises' : 'Reçues') . '/' . ($x['year'] ?: 'Sans année') . '/' . flp_nice_name($x);
 }
 /* Copie une pièce si elle n'y est pas encore (ou si elle a changé de nom ou de contenu) */
-function flp_dbx_sync_item(array $x, bool $force = false): bool {
+/* Réglage « quand copier » : 'verifie' (par défaut) = seulement les factures vérifiées ; 'tout' = dès l'envoi */
+function flp_dbx_wanted(array $x): bool {
   if ($x['type'] !== 'piece' || !$x['ext'] || !empty($x['trashed'])) return false;
+  return (flp_dbx_cfg()['when'] ?? 'verifie') === 'tout' || empty($x['check']);
+}
+/* Retire de Dropbox une pièce mise à la corbeille */
+function flp_dbx_unsync(array $x): void {
+  if (empty($x['dbx'])) return;
+  flp_dbx_delete($x['dbx']);
+  $id = (int)$x['id'];
+  flp_write(function (&$d) use ($id) { foreach ($d['items'] as &$y) if ((int)$y['id'] === $id) { $y['dbx'] = ''; $y['dbx_h'] = ''; } });
+}
+/* Après une modification : copie (ou renomme) si la pièce doit y être */
+function flp_dbx_after(array $x): void {
+  if (!flp_dbx_ready()) return;
+  if (!empty($x['trashed'])) { flp_dbx_unsync($x); return; }
+  if (flp_dbx_wanted($x)) flp_dbx_sync_item($x);
+}
+function flp_dbx_sync_item(array $x, bool $force = false): bool {
+  if (!flp_dbx_wanted($x)) return false;
   $rel = flp_dbx_rel($x);
   if (!$force && ($x['dbx'] ?? '') === $rel && ($x['dbx_h'] ?? '') === $x['hash']) return false;
   if (!flp_dbx_upload(flp_file_path($x), $rel)) return false;

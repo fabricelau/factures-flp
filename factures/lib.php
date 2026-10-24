@@ -244,7 +244,12 @@ function flp_json($data, int $code = 200, bool $continue = false): void {
   header('Content-Type: application/json; charset=utf-8');
   header('Cache-Control: no-store');
   $out = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
-  if (!$continue) { echo $out; exit; }
+  // réponse compressée (la liste des factures passe de plusieurs centaines de Ko à quelques dizaines)
+  if (strlen($out) > 2048 && function_exists('gzencode') && strpos($_SERVER['HTTP_ACCEPT_ENCODING'] ?? '', 'gzip') !== false && !ini_get('zlib.output_compression')) {
+    $gz = gzencode($out, 5);
+    if ($gz !== false) { $out = $gz; header('Content-Encoding: gzip'); header('Vary: Accept-Encoding'); }
+  }
+  if (!$continue) { header('Content-Length: ' . strlen($out)); echo $out; exit; }
   ignore_user_abort(true);
   @set_time_limit(180);
   header('Content-Length: ' . strlen($out));

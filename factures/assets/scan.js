@@ -113,21 +113,23 @@
       const pc = probe.getContext('2d', { willReadFrequently: true });
       const best = document.createElement('canvas'); best.width = W; best.height = H;
       const bc = best.getContext('2d');
-      let bestS = -1, n = 0, last = -1;
-      const t0 = performance.now();
+      let bestS = -1, n = 0, last = -1, since = 0;
+      const t0 = performance.now(), scores = [];
       const nextFrame = () => new Promise(r => v.requestVideoFrameCallback ? v.requestVideoFrameCallback(() => r()) : requestAnimationFrame(() => r()));
-      while (performance.now() - t0 < 750 && n < 14) {
+      while (performance.now() - t0 < 650 && n < 12) {
         await nextFrame();
         if (v.currentTime === last && !v.requestVideoFrameCallback) continue;   // même image qu'avant
         last = v.currentTime;
         pc.drawImage(v, x0, y0, cw, ch, 0, 0, probe.width, probe.height);
         const sh = sharpness(pc.getImageData(0, 0, probe.width, probe.height));
-        n++;
-        if (sh > bestS) { bestS = sh; bc.drawImage(v, 0, 0); }
+        n++; scores.push(sh);
+        if (sh > bestS) { bestS = sh; bc.drawImage(v, 0, 0); since = 0; } else since++;
+        // arrêt anticipé : une image nette est déjà là et les suivantes ne font pas mieux
+        if (n >= 3 && since >= 2) { const med = scores.slice().sort((a, b) => a - b)[scores.length >> 1]; if (bestS >= med * 1.1 || performance.now() - t0 > 350) break; }
       }
       if (bestS < 0) bc.drawImage(v, 0, 0);
       flash();
-      openEditor(best);
+      openEditor(best, null, livePts && liveHits >= 2 ? livePts.map(p => ({ x: p.x, y: p.y })) : null);
     } finally { shooting = false; $('#shot').classList.remove('busy'); setHint(); }
   };
   /* netteté : énergie des contours fins (variance du laplacien) */
@@ -147,9 +149,9 @@
   }
 
   /* ---------- Réglage des coins ---------- */
-  function openEditor(src, keepPts) {
+  function openEditor(src, keepPts, hint) {
     // l'écran s'ouvre tout de suite, la recherche des bords suit juste après
-    edit = { src, pts: keepPts || S.inset(src.width, src.height, 0.06), deg: 0 };
+    edit = { src, pts: keepPts || hint || S.inset(src.width, src.height, 0.06), deg: 0 };
     $('#editHint').textContent = keepPts ? 'Ajustez les coins si besoin.' : 'Recherche des bords…';
     $('#eFilter').setAttribute('aria-pressed', useFilter);
     show('editView');
@@ -158,7 +160,7 @@
     const mine = edit;
     setTimeout(() => {
       if (edit !== mine) return;
-      const det = S.detect(src);
+      const det = S.detect(src, hint ? { init: hint } : {});
       if (edit !== mine) return;
       edit.pts = det.pts; drawQuad();
       $('#editHint').textContent = det.found ? 'Bords trouvés. Ajustez les coins si besoin.' : 'Faites glisser les 4 coins sur les bords de la feuille.';

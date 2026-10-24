@@ -82,8 +82,10 @@
     if (q) {
       const qn = num(q);
       r = r.filter(x => {
-        const hay = [x.societe, x.date, frDate(x.date), x.numero, x.categorie, x.note, x.texte, x.km && x.km.trajet].join(' ').toLowerCase();
-        return hay.includes(q) || (qn !== null && x.montant !== null && Math.abs(x.montant - qn) < 0.005);
+        // texte de recherche calculé une seule fois par facture (et recalculé si elle change)
+        const key = x.societe + '|' + x.date + '|' + x.numero + '|' + x.categorie + '|' + x.note + '|' + (x.texte || '').length;
+        if (x._k !== key) { x._k = key; x._h = [x.societe, x.date, frDate(x.date), x.numero, x.categorie, x.note, x.texte, x.km && x.km.trajet].join(' ').toLowerCase(); }
+        return x._h.includes(q) || (qn !== null && x.montant !== null && Math.abs(x.montant - qn) < 0.005);
       });
     }
     const s = S.sort;
@@ -702,10 +704,13 @@
         <div class="line"><button class="btn btn-sm" id="gSave">Enregistrer</button></div></details>
 
       <h4>Dropbox</h4>
-      <div class="box">${s.dropbox_on ? `<span class="ok-txt">Connecté</span> à ${esc(s.dropbox_account)} — dossier <code>${esc(s.dropbox_folder)}</code>. Chaque facture et la sauvegarde du jour y sont copiées automatiquement.` : 'Non connecté. Une fois connecté, chaque facture est copiée dans votre Dropbox, rangée par année, avec la sauvegarde quotidienne.'}
+      <div class="box">${s.dropbox_on ? `<span class="ok-txt">Connecté</span> à ${esc(s.dropbox_account)}. ${s.dropbox_when === 'tout' ? 'Chaque facture' : 'Chaque facture <b>vérifiée</b>'} est copiée dans <code>${esc(s.dropbox_folder)}</code>, rangée en Reçues / Émises puis par année, sous son nom « date – fournisseur – montant ». Si vous la modifiez, elle est renommée ; mise à la corbeille, elle est retirée.` : 'Non connecté. Une fois connecté, chaque facture vérifiée est copiée dans le dossier Dropbox de votre choix, rangée par année, avec la sauvegarde quotidienne.'}
+        ${s.dropbox_on ? `<label class="fld">Copier dans Dropbox<select id="dWhen"><option value="verifie" ${s.dropbox_when !== 'tout' ? 'selected' : ''}>Seulement les factures vérifiées</option><option value="tout" ${s.dropbox_when === 'tout' ? 'selected' : ''}>Toutes, dès l’envoi</option></select></label>
+        <label class="fld">Dossier dans Dropbox<input id="dFolder2" value="${esc(s.dropbox_folder)}" placeholder="/Compta/Factures"></label>
+        <div class="line"><button class="btn btn-sm" id="dSave2">Enregistrer</button></div>` : ''}
         <div class="line">${s.dropbox_on ? '<button class="btn btn-sm" id="dSync">Copier maintenant</button><button class="btn btn-sm btn-del" id="dOff">Déconnecter</button>' : `<button class="btn btn-sm btn-acc" id="dOn" ${s.dropbox_key && s.dropbox_secret ? '' : 'disabled'}>Connecter Dropbox</button>`}</div></div>
       ${s.dropbox_on ? '' : `<details ${s.dropbox_key ? '' : 'open'}><summary class="muted" style="margin-top:8px;cursor:pointer">Clés de l’application Dropbox</summary>
-        <div class="box"><ol><li>Ouvrez <b>dropbox.com/developers/apps</b> → « Create app ».</li><li>Choisissez « Scoped access » puis « App folder », nommez-la (ex. <i>Factures FLP</i>).</li>
+        <div class="box"><ol><li>Ouvrez <b>dropbox.com/developers/apps</b> → « Create app ».</li><li>Choisissez « Scoped access », puis <b>« Full Dropbox »</b> pour pouvoir choisir n’importe quel dossier (ou « App folder » pour tout ranger dans <i>Applications/…</i>). Nommez-la (ex. <i>Factures FLP</i>).</li>
         <li>Onglet <b>Permissions</b> : cochez <code>files.content.write</code> et <code>files.content.read</code>, puis « Submit ».</li>
         <li>Onglet <b>Settings</b> : dans « Redirect URIs », ajoutez <code>${esc(redirect)}</code>.</li><li>Copiez « App key » et « App secret » ci-dessous, enregistrez, puis « Connecter Dropbox ».</li></ol></div>
         <div class="row2"><label class="fld">App key<input id="dKey" value="${esc(s.dropbox_key)}" autocomplete="off"></label>
@@ -729,6 +734,7 @@
       onOpen: (w, close) => {
         const q = s => w.querySelector(s);
         const save = async (data, msg) => { try { await C.api('settings', data); C.toast(msg || 'Enregistré.', 'ok'); close(true); openSettings(); } catch (e) { C.toast(e.message, 'err'); } };
+        q('#dSave2') && (q('#dSave2').onclick = () => save({ dropbox_when: q('#dWhen').value, dropbox_folder: q('#dFolder2').value.trim() }, 'Réglages Dropbox enregistrés.'));
         q('#gAuto') && (q('#gAuto').onchange = () => save({ github_auto: q('#gAuto').checked ? '1' : '0' }, q('#gAuto').checked ? 'Mises à jour automatiques activées.' : 'Mises à jour automatiques coupées.'));
         q('#gSave') && (q('#gSave').onclick = () => save({ github_repo: q('#gRepo').value.trim(), github_branch: q('#gBranch').value.trim() || 'main', github_token: q('#gToken').value.trim() }, 'Liaison GitHub enregistrée.'));
         q('#updCheck') && (q('#updCheck').onclick = async () => {

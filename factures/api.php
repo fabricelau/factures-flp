@@ -149,8 +149,9 @@ if ($a === 'upload') {
     return $x;
   });
   $dupe = in_array((int)$item['id'], flp_find_duplicates(flp_read()['items']), true);
-  if (is_file(__DIR__ . '/dropbox.php')) { require_once __DIR__ . '/dropbox.php'; if (flp_dbx_ready()) flp_dbx_sync_item($item); }
-  flp_json(['ok' => true, 'item' => $item, 'doublon' => $dupe]);
+  flp_json(['ok' => true, 'item' => $item, 'doublon' => $dupe], 200, true);   // réponse tout de suite, Dropbox ensuite
+  if (is_file(__DIR__ . '/dropbox.php')) { require_once __DIR__ . '/dropbox.php'; flp_dbx_after($item); }
+  exit;
 }
 
 /* Lecture faite APRÈS l'envoi (l'appli photo envoie d'abord, lit ensuite) :
@@ -227,8 +228,11 @@ if ($a === 'save') {
     return null;
   });
   if (!$res) flp_json(['ok' => false, 'msg' => 'Facture introuvable.'], 404);
+  flp_json(['ok' => true, 'item' => $res], 200, true);          // réponse tout de suite…
   if ($res['type'] === 'piece') flp_learn($res['societe'], $res['categorie'], $res['texte'], $res);
-  flp_json(['ok' => true, 'item' => $res]);
+  // …puis copie dans Dropbox de la facture vérifiée (ou renommage si ses infos ont changé)
+  if (is_file(__DIR__ . '/dropbox.php')) { require_once __DIR__ . '/dropbox.php'; flp_dbx_after($res); }
+  exit;
 }
 
 /* ===================================================================
@@ -252,7 +256,12 @@ if ($a === 'bulk') {
     }
     return $n;
   });
-  flp_json(['ok' => true, 'n' => $n]);
+  flp_json(['ok' => true, 'n' => $n], 200, true);
+  if (in_array($op, ['check', 'trash', 'categorie', 'sens'], true) && is_file(__DIR__ . '/dropbox.php')) {
+    require_once __DIR__ . '/dropbox.php';
+    foreach (flp_read()['items'] as $x) if (in_array((int)$x['id'], $ids, true)) flp_dbx_after($x);
+  }
+  exit;
 }
 
 /* ===================================================================
@@ -264,11 +273,13 @@ if ($a === 'trash' || $a === 'restore') {
     foreach ($d['items'] as &$x) if ((int)$x['id'] === $id) {
       if ($a === 'trash') { $x['trashed'] = true; $x['trashed_at'] = date('c'); }
       else { $x['trashed'] = false; unset($x['trashed_at']); }
-      return true;
+      return $x;
     }
     return false;
   });
-  flp_json(['ok' => (bool)$ok]);
+  flp_json(['ok' => (bool)$ok], 200, true);
+  if ($ok && is_file(__DIR__ . '/dropbox.php')) { require_once __DIR__ . '/dropbox.php'; flp_dbx_after($ok); }
+  exit;
 }
 if ($a === 'trashlist') {
   $items = array_values(array_filter(flp_read()['items'], fn($x) => !empty($x['trashed'])));
@@ -412,7 +423,7 @@ if ($a === 'settings_get') {
     'github_repo' => $S['github']['repo'] !== '' ? $S['github']['repo'] : FLP_GITHUB_REPO, 'github_auto' => ($S['github']['auto'] ?? true) !== false,
     'maj_auto' => flp_json_read('etat.json', [])['maj_auto'] ?? null, 'github_branch' => $S['github']['branch'] ?: 'main', 'github_token' => $S['github']['token'] !== '',
     'dropbox_key' => $S['dropbox']['app_key'], 'dropbox_secret' => $S['dropbox']['app_secret'] !== '',
-    'dropbox_on' => $S['dropbox']['refresh'] !== '', 'dropbox_account' => $S['dropbox']['account'] ?? '', 'dropbox_folder' => $S['dropbox']['folder'] ?: '/Factures FLP',
+    'dropbox_on' => $S['dropbox']['refresh'] !== '', 'dropbox_account' => $S['dropbox']['account'] ?? '', 'dropbox_folder' => $S['dropbox']['folder'] ?: '/Factures FLP', 'dropbox_when' => $S['dropbox']['when'] ?? 'verifie',
     'last_backup' => $b ? basename(end($b)) : '', 'backups' => count($b),
     'version' => is_file(__DIR__ . '/VERSION') ? trim((string)file_get_contents(__DIR__ . '/VERSION')) : '',
     'last_sync' => $e['dbx_sync'] ?? 0,
@@ -436,6 +447,7 @@ if ($a === 'settings') {
   if (array_key_exists('dropbox_key', $_POST)) $S['dropbox']['app_key'] = preg_replace('/[^\w]/', '', $in('dropbox_key'));
   if (array_key_exists('dropbox_secret', $_POST) && $in('dropbox_secret') !== '') $S['dropbox']['app_secret'] = preg_replace('/[^\w]/', '', $in('dropbox_secret'));
   if (array_key_exists('dropbox_folder', $_POST)) { $f = '/' . trim(preg_replace('~[^\w À-ÿ./-]~u', '', $in('dropbox_folder')), '/'); $S['dropbox']['folder'] = $f === '/' ? '/Factures FLP' : $f; }
+  if (array_key_exists('dropbox_when', $_POST)) $S['dropbox']['when'] = $in('dropbox_when') === 'tout' ? 'tout' : 'verifie';
   if (($_POST['dropbox_off'] ?? '') === '1') { $S['dropbox']['refresh'] = ''; $S['dropbox']['account'] = ''; }
   flp_settings_save($S);
   flp_json(['ok' => true, 'msg' => 'Réglages enregistrés.']);

@@ -98,7 +98,7 @@ main{padding:6px var(--g) 0}
 .month-h .car{color:var(--mute);transition:transform .2s}
 .month.closed .car{transform:rotate(-90deg)} .month.closed .cards{display:none}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--card,150px),1fr));gap:14px;margin-top:12px}
-.card{position:relative;background:var(--ink2);border:1px solid var(--line);border-radius:10px;overflow:hidden;text-align:left;padding:0;transition:border-color .15s}
+.card{content-visibility:auto;contain-intrinsic-size:auto 260px;position:relative;background:var(--ink2);border:1px solid var(--line);border-radius:10px;overflow:hidden;text-align:left;padding:0;transition:border-color .15s}
 .card:hover{border-color:var(--line2)}
 .card .pic{aspect-ratio:3/4;background:var(--ink3) center/cover no-repeat;position:relative;display:grid;place-items:center;color:var(--mute)}
 .card .pic svg{width:44px;height:44px}
