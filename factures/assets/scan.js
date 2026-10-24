@@ -375,7 +375,7 @@
     f.id.value = item.id;
     f.societe.value = item.societe || '';
     const shown = item.montant_orig != null ? item.montant_orig : item.montant;   // montant dans la devise de la facture
-    f.montant.value = shown != null ? String(shown).replace('.', ',') : '';
+    f.montant.value = shown != null ? Number(shown).toFixed(2).replace('.', ',') : '';
     f.dataset.devise = item.devise || 'EUR';
     $('#qCur').textContent = item.devise && item.devise !== 'EUR' ? item.devise : '';
     f.date.value = item.date || '';
@@ -394,7 +394,7 @@
     const put = (k, v) => { const el = f[k]; if (!el || el.dataset.touched || el.value || v == null || v === '') return; el.value = v; el.classList.toggle('doubt', dt.includes(k)); };
     put('societe', item.societe);
     const shown = item.montant_orig != null ? item.montant_orig : item.montant;
-    if (!f.montant.dataset.touched && !f.montant.value && shown != null) { f.montant.value = String(shown).replace('.', ','); f.dataset.devise = item.devise || 'EUR'; $('#qCur').textContent = item.devise && item.devise !== 'EUR' ? item.devise : ''; f.montant.classList.toggle('doubt', dt.includes('montant')); }
+    if (!f.montant.dataset.touched && !f.montant.value && shown != null) { f.montant.value = Number(shown).toFixed(2).replace('.', ','); f.dataset.devise = item.devise || 'EUR'; $('#qCur').textContent = item.devise && item.devise !== 'EUR' ? item.devise : ''; f.montant.classList.toggle('doubt', dt.includes('montant')); }
     put('date', item.date);
     put('categorie', item.categorie);
     if (!$('#qTitle').textContent.includes('doublon')) $('#qSub').textContent = item.societe || item.montant != null ? 'Lu automatiquement : vérifiez, puis validez.' : 'Rien de lisible : complétez à la main.';

@@ -23,6 +23,7 @@
   const cats = sens => sens === 'vente' ? S.cfg.categories_ventes : S.cfg.categories;
   const thumbUrl = x => `${API}?a=thumb&id=${x.id}&r=${x.rot || 0}`;
   // adresse « parlante » : le fichier s'ouvre et se télécharge sous son vrai nom (date_fournisseur_montant.pdf)
+  const fmt2 = v => v == null || v === '' ? '' : Number(v).toFixed(2).replace('.', ',');   // 68,1 → 68,10
   const fileName = x => x.filename || `facture-${x.id}.${x.ext || 'pdf'}`;
   const fileUrl = (x, dl) => `${BASE}f/${x.id}/${encodeURIComponent(fileName(x))}?r=${x.rot || 0}${dl ? '&dl=1' : ''}`;
   const num = v => { const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')); return isNaN(n) ? null : n; };
@@ -211,12 +212,12 @@
       <label class="fld">Type<div class="seg" data-seg="sens"><button type="button" data-v="achat" aria-pressed="${!vente}" ${dis}>Reçue (achat)</button><button type="button" data-v="vente" aria-pressed="${vente}" ${dis}>Émise (vente)</button></div></label>
       <input type="hidden" name="sens" value="${vente ? 'vente' : 'achat'}">
       <label class="fld">${vente ? 'Client' : 'Fournisseur'}<input name="societe" list="socList" value="${esc(x.societe)}" class="${d('societe')}" ${dis}></label>
-      <div class="row2"><label class="fld">Date<input name="date" type="date" value="${esc(x.date)}" class="${d('date')}" ${dis}></label>
-      <label class="fld">Montant TTC<div class="amt"><input name="montant" inputmode="decimal" value="${x.montant_orig != null ? String(x.montant_orig).replace('.', ',') : (x.montant != null ? String(x.montant).replace('.', ',') : '')}" class="${d('montant')}" ${dis}>
-        <select name="devise" class="${d('devise')}" ${dis}>${['EUR', 'USD', 'GBP', 'MUR', 'CHF', 'JPY', 'CAD', 'ZAR'].map(c => `<option ${c === x.devise ? 'selected' : ''}>${c}</option>`).join('')}</select></div></label></div>
+      <label class="fld fld-ttc">Montant TTC<div class="amt"><input name="montant" inputmode="decimal" value="${fmt2(x.montant_orig != null ? x.montant_orig : x.montant)}" class="${d('montant')}" ${dis}>
+        <select name="devise" class="${d('devise')}" ${dis}>${['EUR', 'USD', 'GBP', 'MUR', 'CHF', 'JPY', 'CAD', 'ZAR'].map(c => `<option ${c === x.devise ? 'selected' : ''}>${c}</option>`).join('')}</select></div></label>
+      <label class="fld">Date<input name="date" type="date" value="${esc(x.date)}" class="${d('date')}" ${dis}></label>
       ${x.montant_orig != null ? `<p class="conv">= ${eur(x.montant)} au taux du ${frDate(x.date)} (1 € = ${x.taux_change} ${esc(x.devise)})</p>` : ''}
-      <div class="row3"><label class="fld">HT<input name="ht" inputmode="decimal" value="${x.ht != null ? String(x.ht).replace('.', ',') : ''}" ${dis}></label>
-      <label class="fld">TVA<input name="tva" inputmode="decimal" value="${x.tva != null ? String(x.tva).replace('.', ',') : ''}" ${dis}></label>
+      <div class="row3"><label class="fld">HT<input name="ht" inputmode="decimal" value="${fmt2(x.ht)}" ${dis}></label>
+      <label class="fld">TVA<input name="tva" inputmode="decimal" value="${fmt2(x.tva)}" ${dis}></label>
       <label class="fld">Taux %<input name="taux_tva" inputmode="decimal" list="tauxList" value="${x.taux_tva != null ? String(x.taux_tva).replace('.', ',') : ''}" ${dis}></label></div>
       <datalist id="tauxList"><option value="8,5"><option value="2,1"><option value="0"><option value="20"><option value="10"><option value="5,5"></datalist>
       <label class="fld">Catégorie<select name="categorie" class="${d('categorie')}" ${dis}><option value="">— Catégorie —</option>${cs.map(c => `<option ${c === x.categorie ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>

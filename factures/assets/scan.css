@@ -71,3 +71,8 @@ body.scan{min-height:100svh;display:flex;flex-direction:column;background:#000;o
 body.scan .toasts{bottom:calc(150px + env(safe-area-inset-bottom))}
 
 .shutter.busy{transform:scale(.9);box-shadow:0 0 0 4px #e3a653;transition:transform .15s}
+
+/* Validation rapide : montant TTC mis en avant */
+#qForm .fld-ttc input{font:800 30px/1.1 var(--dsp);color:var(--acc);text-align:right;padding:12px 14px;border:2px solid color-mix(in srgb,var(--acc) 55%,var(--line));background:color-mix(in srgb,var(--acc) 8%,var(--ink));font-variant-numeric:tabular-nums}
+#qForm .fld-ttc{color:var(--acc)}
+#qForm input[type=date]{-webkit-appearance:none;appearance:none;min-width:0;max-width:100%;text-align:left;min-height:46px}

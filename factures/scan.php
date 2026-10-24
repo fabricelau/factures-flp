@@ -81,10 +81,8 @@ if(sa&&!sessionStorage.getItem('flp-lance')&&!document.referrer){sessionStorage.
       <input type="hidden" name="id">
       <label class="fld">Fournisseur<input name="societe" list="qSocs"></label>
       <datalist id="qSocs"></datalist>
-      <div class="row2">
-        <label class="fld">Montant TTC <span id="qCur" class="muted"></span><input name="montant" inputmode="decimal"></label>
-        <label class="fld">Date<input name="date" type="date"></label>
-      </div>
+      <label class="fld fld-ttc">Montant TTC <span id="qCur" class="muted"></span><input name="montant" inputmode="decimal"></label>
+      <label class="fld">Date<input name="date" type="date"></label>
       <label class="fld">Catégorie<select name="categorie" id="qCat"></select></label>
       <div class="quick-foot">
         <button type="button" class="btn" id="qLater">Plus tard</button>
