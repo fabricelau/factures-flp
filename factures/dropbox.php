@@ -60,7 +60,11 @@ function flp_dbx_list(string $path): array {
   $r = flp_http(FLP_DBX_API . '/2/files/list_folder', $h, json_encode(['path' => $path, 'limit' => 500]), 25);
   $j = json_decode($r['body'], true);
   if ($r['code'] !== 200 || !is_array($j)) {
-    $why = is_array($j) && strpos((string)($j['error_summary'] ?? ''), 'not_found') !== false ? 'Dossier introuvable.' : 'Dropbox ne répond pas (' . ($r['code'] ?: $r['err']) . ').';
+    $es = is_array($j) ? (string)($j['error_summary'] ?? '') : '';
+    $why = strpos($es, 'not_found') !== false ? 'Dossier introuvable.'
+      : (strpos($es, 'missing_scope') !== false || $r['code'] === 401
+        ? 'Dropbox refuse l’accès aux dossiers : sur dropbox.com/developers, dans votre app → Permissions, cochez « files.metadata.read » et « files.content.read », Envoyer ; puis ici Déconnecter et Connecter Dropbox.'
+        : 'Dropbox ne répond pas (' . ($r['code'] ?: $r['err']) . ').');
     return ['ok' => false, 'msg' => $why];
   }
   $entries = $j['entries'] ?? [];
@@ -88,7 +92,11 @@ function flp_dbx_stream(string $path): void {
   $t = flp_dbx_token(); if (!$t) flp_json(['ok' => false, 'msg' => 'Dropbox n’est pas connecté.'], 422);
   $tmp = flp_tmp_dir() . '/dbx-' . bin2hex(random_bytes(6));
   $r = flp_http(FLP_DBX_CONTENT . '/2/files/download', ['Authorization: Bearer ' . $t, 'Dropbox-API-Arg: ' . json_encode(['path' => $path]), 'Content-Type:'], '', 120, $tmp);   // « Content-Type: » vide : Dropbox refuse le type par défaut de curl
-  if ($r['code'] !== 200 || !is_file($tmp) || !filesize($tmp)) { @unlink($tmp); flp_json(['ok' => false, 'msg' => 'Téléchargement depuis Dropbox impossible (' . ($r['code'] ?: $r['err']) . ').'], 502); }
+  if ($r['code'] !== 200 || !is_file($tmp) || !filesize($tmp)) {
+    $body = is_file($tmp) ? (string)file_get_contents($tmp, false, null, 0, 2000) : ''; @unlink($tmp);
+    $msg = strpos($body, 'missing_scope') !== false ? 'Permission « files.content.read » manquante dans votre app Dropbox (puis Déconnecter / Connecter).' : 'Téléchargement depuis Dropbox impossible (' . ($r['code'] ?: $r['err']) . ').';
+    flp_json(['ok' => false, 'msg' => $msg], 502);
+  }
   if (filesize($tmp) > FLP_MAX_UPLOAD) { @unlink($tmp); flp_json(['ok' => false, 'msg' => 'Fichier trop volumineux (40 Mo maximum).'], 422); }
   $mime = (new finfo(FILEINFO_MIME_TYPE))->file($tmp) ?: 'application/octet-stream';
   if (!preg_match('~^(image/|application/pdf)~', $mime) && !in_array($ext, ['heic', 'heif'], true)) { @unlink($tmp); flp_json(['ok' => false, 'msg' => 'Ce fichier n’est ni une photo ni un PDF.'], 422); }
