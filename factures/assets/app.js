@@ -60,7 +60,8 @@
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
     } catch (e) { progress(''); C.toast(e.message || 'Export impossible.', 'err'); }
   }
-  document.addEventListener('click', e => { const b = e.target.closest('[data-share]'); if (!b) return; const x = S.items.find(i => +i.id === +b.dataset.share); if (x) shareOne(x); });
+  document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.dl[data-share]')) { e.preventDefault(); e.stopPropagation(); e.target.click(); } }, true);
+  document.addEventListener('click', e => { if (S.selecting) return; const b = e.target.closest('[data-share]'); if (!b) return; e.preventDefault(); const x = S.items.find(i => +i.id === +b.dataset.share); if (x) shareOne(x); });
 
   /* ===================== Hors-ligne ===================== */
   function setOffline(off) {
@@ -172,12 +173,14 @@
     const conv = x.montant_orig != null ? `<small>${eur(x.montant_orig, x.devise)}</small>` : '';
     const sel = S.sel.has(+x.id) ? ' sel' : '';
     const title = esc(x.type === 'km' ? (x.km?.trajet || 'Frais kilométriques') : (x.societe || 'Sans nom'));
+    // icône de téléchargement de la facture seule (élément « bouton » dans la carte, qui est elle-même un bouton)
+    const dl = x.ext ? `<span class="dl" role="button" tabindex="0" data-share="${x.id}" title="Télécharger cette facture" aria-label="Télécharger ${title}"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span>` : '<span class="dl dl-none"></span>';
     if (S.view === 'list') return `<button class="card${sel}" data-id="${x.id}"><span class="tick"></span>${pic}
       <div class="info"><h3>${title}</h3><div class="meta">${frDate(x.date)}${x.categorie ? ' · ' + esc(x.categorie) : ''}</div></div>
-      <div class="right"><div class="mt">${eur(x.montant)}${conv}</div><div class="lbdg">${badges(x)}</div></div></button>`;
+      <div class="right"><div class="mt">${eur(x.montant)}${conv}</div><div class="lbdg">${badges(x)}</div></div>${dl}</button>`;
     return `<button class="card${sel}" data-id="${x.id}"><span class="tick"></span>${pic.replace('</div>', `<div class="badges">${badges(x)}</div></div>`)}
       <div class="info"><h3>${title}</h3><div class="mt">${eur(x.montant)}${conv}</div><div class="meta">${frDate(x.date)}</div>
-      ${x.categorie ? `<span class="cat">${esc(x.categorie)}</span>` : ''}</div></button>`;
+      ${x.categorie ? `<span class="cat">${esc(x.categorie)}</span>` : ''}</div>${dl}</button>`;
   }
   function renderStats() {
     const yr = String(new Date().getFullYear()), prev = String(+yr - 1), today = ymd(new Date()).slice(5);
@@ -824,6 +827,7 @@
        logout: async () => { try { await C.api('logout', {}); } catch (e) {} try { await caches.delete('flp-donnees'); } catch (e) {} location.href = BASE; } })[b.dataset.m]?.();
   });
   $('#app').addEventListener('click', e => {
+    if (e.target.closest('[data-share]') && !S.selecting) return;     // l'icône ⬇ télécharge, sans ouvrir la fiche
     const c = e.target.closest('.card');
     if (c) {
       if (S.selecting) { const id = +c.dataset.id; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); c.classList.toggle('sel'); updSel(); return; }
