@@ -111,7 +111,8 @@ function flp_dbx_stream(string $path): void {
 /* Réglage « quand copier » : 'verifie' (par défaut) = seulement les factures vérifiées ; 'tout' = dès l'envoi */
 function flp_dbx_wanted(array $x): bool {
   if ($x['type'] !== 'piece' || !$x['ext'] || !empty($x['trashed'])) return false;
-  return (flp_dbx_cfg()['when'] ?? 'verifie') === 'tout' || empty($x['check']);
+  // « vérifiée » = case verte « Vérifiée » cochée par vous dans la fiche
+  return (flp_dbx_cfg()['when'] ?? 'verifie') === 'tout' || !empty($x['verifie']);
 }
 /* Retire de Dropbox une pièce mise à la corbeille */
 function flp_dbx_unsync(array $x): void {

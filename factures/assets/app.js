@@ -177,9 +177,9 @@
     const dl = x.ext ? `<span class="dl" role="button" tabindex="0" data-share="${x.id}" title="Télécharger cette facture" aria-label="Télécharger ${title}"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span>` : '<span class="dl dl-none"></span>';
     if (S.view === 'list') return `<button class="card${sel}" data-id="${x.id}"><span class="tick"></span>${pic}
       <div class="info"><h3>${title}</h3><div class="meta">${frDate(x.date)}${x.categorie ? ' · ' + esc(x.categorie) : ''}</div></div>
-      <div class="right"><div class="mt">${eur(x.montant)}${conv}</div><div class="lbdg">${badges(x)}</div></div>${dl}</button>`;
+      <div class="right"><div class="mt">${eur(x.montant)}${conv}</div><div class="lbdg">${badges(x)}</div></div>${x.verifie ? '<span class="vdot" title="Vérifiée par vous"></span>' : '<span class="vdot off"></span>'}${dl}</button>`;
     return `<button class="card${sel}" data-id="${x.id}"><span class="tick"></span>${pic.replace('</div>', `<div class="badges">${badges(x)}</div></div>`)}
-      <div class="info"><h3>${title}</h3><div class="mt">${eur(x.montant)}${conv}</div><div class="meta">${frDate(x.date)}</div>
+      <div class="info"><h3>${title}${x.verifie ? ' <span class="vdot" title="Vérifiée par vous"></span>' : ''}</h3><div class="mt">${eur(x.montant)}${conv}</div><div class="meta">${frDate(x.date)}</div>
       ${x.categorie ? `<span class="cat">${esc(x.categorie)}</span>` : ''}</div>${dl}</button>`;
   }
   function renderStats() {
@@ -246,7 +246,8 @@
       <label class="fld">N° de facture<input name="numero" value="${esc(x.numero)}" ${dis}></label>
       <label class="fld">Note<textarea name="note" rows="2" ${dis}>${esc(x.note)}</textarea></label>
       <label class="check"><input type="checkbox" name="transmis" value="1" ${x.transmis ? 'checked' : ''} ${dis}> Transmise au comptable${x.transmis ? ` <span class="muted">(${frDate(x.transmis.slice(0, 10))})</span>` : ''}</label>
-      <label class="check"><input type="checkbox" name="check" value="1" ${x.check ? 'checked' : ''} ${dis}> À vérifier</label>
+      <label class="check"><input type="checkbox" name="check" value="1" ${x.check && !x.verifie ? 'checked' : ''} ${dis}> À vérifier</label>
+      <label class="verif${x.verifie ? ' on' : ''}"><input type="checkbox" name="verifie" value="1" ${x.verifie ? 'checked' : ''} ${dis}><span class="vbox"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span><b>Vérifiée</b><small>${x.verifie ? `par vous le ${frDate(String(x.verifie).slice(0, 10))}` : 'cochez quand vous avez contrôlé la facture vous-même'}</small></span></label>
       ${ro ? '' : `<div class="sheet-foot"><button type="button" class="btn btn-del" data-act="trash">Corbeille</button><button type="submit" class="btn btn-acc">Enregistrer</button></div>`}
       <datalist id="socList">${[...new Set(S.items.filter(y => y.sens === x.sens).map(y => y.societe).filter(Boolean))].map(s => `<option value="${esc(s)}">`).join('')}</datalist>`;
   }
@@ -282,6 +283,10 @@
     const b = (S.cfg.bareme || {})[cv] || (S.cfg.bareme || {})['5'] || [0.636, 0.357, 1395, 0.427];
     return Math.round((km <= 5000 ? km * b[0] : km <= 20000 ? km * b[1] + b[2] : km * b[3]) * 100) / 100;
   }
+  document.addEventListener('change', e => {
+    if (e.target.name === 'verifie') { const f = e.target.form; e.target.closest('.verif').classList.toggle('on', e.target.checked); if (e.target.checked && f.check) f.check.checked = false; }
+    if (e.target.name === 'check' && e.target.checked && e.target.form.verifie) { e.target.form.verifie.checked = false; e.target.form.verifie.closest('.verif').classList.remove('on'); }
+  });
   function formData(form) {
     const o = {};
     for (const el of form.elements) {
@@ -309,7 +314,7 @@
     $('#sheetView').innerHTML = sheetView(x);
     $('#sheetTools').hidden = !ADMIN || x.type === 'km';
     $('#sheetTools').querySelectorAll('[data-act^=rot]').forEach(b => b.hidden = !['jpg', 'png', 'webp', 'pdf'].includes(x.ext));
-    const f = $('#sheetForm'); f.innerHTML = (x.ext ? `<button type="button" class="btn btn-share" data-share="${x.id}"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Exporter cette facture</button>` : '') + fieldHTML(x, !ADMIN) + `<p class="sheet-meta">${x.source === 'scan' ? 'Scannée' : x.source === 'partage' ? 'Partagée' : x.source === 'dropbox' ? 'Importée depuis Dropbox' : x.source === 'saisie' ? 'Saisie' : 'Importée'} le ${frDate((x.added || '').slice(0, 10))}${x.ext ? ` · <a href="${fileUrl(x, true)}">Télécharger</a>` : ''}${x.dbx ? ' · copiée dans Dropbox' : ''}</p>`;
+    const f = $('#sheetForm'); f.innerHTML = (x.verifie ? `<div class="vpill"><span class="vdot"></span>Vérifiée par vous le ${frDate(String(x.verifie).slice(0, 10))}</div>` : '') + (x.ext ? `<button type="button" class="btn btn-share" data-share="${x.id}"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Exporter cette facture</button>` : '') + fieldHTML(x, !ADMIN) + `<p class="sheet-meta">${x.source === 'scan' ? 'Scannée' : x.source === 'partage' ? 'Partagée' : x.source === 'dropbox' ? 'Importée depuis Dropbox' : x.source === 'saisie' ? 'Saisie' : 'Importée'} le ${frDate((x.added || '').slice(0, 10))}${x.ext ? ` · <a href="${fileUrl(x, true)}">Télécharger</a>` : ''}${x.dbx ? ' · copiée dans Dropbox' : ''}</p>`;
     bindForm(f, x);
     $('#sheet').hidden = false;
     $('#sheetView').onclick = () => { if (x.type !== 'km') openViewer(visible(), visible().findIndex(y => +y.id === +x.id)); };

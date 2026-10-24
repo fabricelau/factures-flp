@@ -232,7 +232,7 @@ function flp_normalize(array $x): array {
     'ht' => null, 'tva' => null, 'taux_tva' => null, 'categorie' => '', 'numero' => '', 'note' => '',
     'paiement' => '', 'texte' => '', 'doutes' => [], 'check' => false, 'ext' => '', 'thumb' => false,
     'pages' => 1, 'filename' => '', 'source' => 'import', 'added' => '', 'trashed' => false,
-    'transmis' => '', 'hash' => '', 'km' => null, 'v' => 1, 'vh' => '',
+    'transmis' => '', 'hash' => '', 'km' => null, 'v' => 1, 'vh' => '', 'verifie' => false,
   ];
 }
 

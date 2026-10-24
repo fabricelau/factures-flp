@@ -221,6 +221,9 @@ if ($a === 'save') {
       flp_apply_fields($x, $in, true);
       if (array_key_exists('transmis', $_POST)) $x['transmis'] = $in('transmis') === '1' ? ($x['transmis'] ?: date('c')) : '';
       $x['check'] = array_key_exists('check', $_POST) ? $in('check') === '1' : ($x['societe'] === '' || $x['montant'] === null || $x['date'] === '');
+      // « Vérifiée » : contrôlée par vous-même (case verte) → plus rien « à vérifier »
+      if (array_key_exists('verifie', $_POST)) $x['verifie'] = $in('verifie') === '1' ? ($x['verifie'] ?: date('c')) : false;
+      if (!empty($x['verifie'])) $x['check'] = false;
       $x['doutes'] = [];
       $x['filename'] = flp_nice_name($x);
       return $x;
@@ -249,7 +252,7 @@ if ($a === 'bulk') {
       if ($op === 'categorie') { $cats = $x['sens'] === 'vente' ? FLP_CATEGORIES_VENTES : FLP_CATEGORIES; if (!in_array($val, $cats, true)) continue; $x['categorie'] = $val; }
       elseif ($op === 'trash')    { $x['trashed'] = true; $x['trashed_at'] = date('c'); }
       elseif ($op === 'transmis') { $x['transmis'] = $val === '1' ? date('c') : ''; }
-      elseif ($op === 'check')    { $x['check'] = $val === '1'; }
+      elseif ($op === 'check')    { $x['check'] = $val === '1'; if ($val !== '1') $x['verifie'] = $x['verifie'] ?: date('c'); else $x['verifie'] = false; }
       elseif ($op === 'sens')     { $x['sens'] = $val === 'vente' ? 'vente' : 'achat'; $x['categorie'] = ''; }
       else continue;
       $n++;
@@ -257,7 +260,7 @@ if ($a === 'bulk') {
     return $n;
   });
   flp_json(['ok' => true, 'n' => $n], 200, true);
-  if (in_array($op, ['check', 'trash', 'categorie', 'sens'], true) && is_file(__DIR__ . '/dropbox.php')) {
+  if (in_array($op, ['check', 'trash', 'categorie', 'sens', 'verifie'], true) && is_file(__DIR__ . '/dropbox.php')) {
     require_once __DIR__ . '/dropbox.php';
     foreach (flp_read()['items'] as $x) if (in_array((int)$x['id'], $ids, true)) flp_dbx_after($x);
   }
