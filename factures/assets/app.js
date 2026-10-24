@@ -152,7 +152,7 @@
         const [y, m] = k.split('-');
         html += `<section class="month${S.closed[k] ? ' closed' : ''}" data-k="${k}">
           <div class="month-h"><h2>${k === '0000-00' ? 'Sans date' : MOIS[+m] + ' ' + y}</h2><span class="n">${g.length} facture${g.length > 1 ? 's' : ''}</span>
-          <span class="tot">${eur(tot)}</span>${k !== '0000-00' ? `<button class="mexp" data-mexp="${k}" title="Exporter ce mois" aria-label="Exporter ${MOIS[+m]} ${y}"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></button>` : ''}<svg class="car" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+          <span class="tot">${eur(tot)}</span><svg class="car" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
           <div class="${cls}">${g.map(card).join('')}</div></section>`;
       }
       app.innerHTML = html;
@@ -833,8 +833,6 @@
       if (S.selecting) { const id = +c.dataset.id; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); c.classList.toggle('sel'); updSel(); return; }
       return openSheet(c.dataset.id);
     }
-    const mx = e.target.closest('[data-mexp]');
-    if (mx) { const [y, m] = mx.dataset.mexp.split('-').map(Number); return openExport({ per: 'pickmonth', mon: mx.dataset.mexp, from: ymd(new Date(Date.UTC(y, m - 1, 1))), to: ymd(new Date(Date.UTC(y, m, 0))) }); }
     const h = e.target.closest('.month-h');
     if (h) { const k = h.parentElement.dataset.k; S.closed[k] = !S.closed[k]; h.parentElement.classList.toggle('closed'); }
   });
