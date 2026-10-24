@@ -9,7 +9,7 @@ echo json_encode([
   'short_name' => FLP_SHORT,
   'description' => 'Scanner et classer les factures de ' . FLP_SITE,
   'lang' => 'fr',
-  'start_url' => $base . 'scan',
+  'start_url' => $base . 'accueil',
   'scope' => $base,
   'display' => 'standalone',
   'orientation' => 'portrait',
@@ -21,7 +21,7 @@ echo json_encode([
     ['src' => $base . 'assets/icons/maskable-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'maskable'],
   ],
   'shortcuts' => [
-    ['name' => 'Scanner une facture', 'url' => $base . 'scan', 'icons' => [['src' => $base . 'assets/icons/icon-96.png', 'sizes' => '96x96']]],
+    ['name' => 'Photo d’une facture', 'url' => $base . 'scan', 'icons' => [['src' => $base . 'assets/icons/icon-96.png', 'sizes' => '96x96']]],
     ['name' => 'Toutes les factures', 'url' => $base, 'icons' => [['src' => $base . 'assets/icons/icon-96.png', 'sizes' => '96x96']]],
   ],
   /* « Partager → Factures FLP » depuis la galerie ou un e-mail (Android) */

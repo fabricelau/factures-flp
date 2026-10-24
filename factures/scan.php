@@ -18,7 +18,9 @@ $base = flp_base_path();
 <meta name="apple-mobile-web-app-title" content="<?= htmlspecialchars(FLP_SHORT) ?>">
 <link rel="stylesheet" href="<?= flp_asset('assets/app.css') ?>">
 <link rel="stylesheet" href="<?= flp_asset('assets/scan.css') ?>">
-<script>try{var t=localStorage.getItem('flp-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<script>try{var t=localStorage.getItem('flp-theme');if(t)document.documentElement.dataset.theme=t;
+var sa=(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone;
+if(sa&&!sessionStorage.getItem('flp-lance')&&!document.referrer){sessionStorage.setItem('flp-lance','1');location.replace(<?= json_encode($base . 'accueil') ?>)}}catch(e){}</script>
 </head>
 <body class="scan">
 

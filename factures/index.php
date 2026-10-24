@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
       usleep(300000);
       $p = (string)($_POST['p'] ?? '');
-      if (flp_pass_check($p))       { flp_throttle_ok(); flp_login('admin');  header('Location: ' . flp_base_path()); exit; }
+      if (flp_pass_check($p))       { flp_throttle_ok(); flp_login('admin');  $nx = $_POST['next'] ?? ''; header('Location: ' . flp_base_path() . (in_array($nx, ['accueil', 'scan'], true) ? $nx : '')); exit; }
       if (flp_compta_check($p))     { flp_throttle_ok(); flp_login('compta'); header('Location: ' . flp_base_path()); exit; }
       $err = 'Mot de passe incorrect.';
     }
@@ -110,6 +110,7 @@ $base = flp_base_path();
 </head>
 <body>
   <form class="card" method="post" autocomplete="off" action="<?= $base ?>">
+    <?php $nx = $_GET['next'] ?? $_POST['next'] ?? ''; if (in_array($nx, ['accueil', 'scan'], true)): ?><input type="hidden" name="next" value="<?= $nx ?>"><?php endif; ?>
     <div class="logo"><img src="<?= $base ?>icon.php?s=96" alt=""><div><b>Factures</b><span>Fabrice Lau Production</span></div></div>
     <h1><?= htmlspecialchars($title) ?></h1>
     <?php if ($first): ?>

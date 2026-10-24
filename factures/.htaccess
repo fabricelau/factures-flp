@@ -11,6 +11,8 @@ RewriteRule ^manifest\.webmanifest$ manifest.php [L]
 
 # Adresse courte de l'app photo : /factures/scan (et /factures/scan/)
 RewriteRule ^scan/?$ scan.php [L]
+# Écran de lancement de l'appli installée : /factures/accueil
+RewriteRule ^accueil/?$ accueil.php [L]
 
 # Pas d'indexation par les moteurs
 Header set X-Robots-Tag "noindex, nofollow" env=REDIRECT_STATUS
