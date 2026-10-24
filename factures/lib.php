@@ -315,6 +315,7 @@ function flp_save_client_thumb(int $id): bool {
 /* Rotation d'une photo (90° à droite ou à gauche) */
 function flp_rotate(array $x, int $deg): bool {
   $p = flp_file_path($x);
+  if ($x['ext'] === 'pdf') return flp_rotate_pdf($p, $deg) && flp_rotate_thumb((int)$x['id'], $deg);
   $img = flp_gd_open($p, $x['ext']);
   if (!$img) return false;
   $r = imagerotate($img, -$deg, 0); // GD tourne dans le sens inverse des aiguilles
@@ -322,6 +323,46 @@ function flp_rotate(array $x, int $deg): bool {
   imagedestroy($img); imagedestroy($r);
   if ($ok) flp_make_thumb($p, flp_thumb_path((int)$x['id']), $x['ext']);
   return $ok;
+}
+
+/* PDF : on change l'orientation d'affichage de chaque page (/Rotate), sans toucher à l'image */
+function flp_rotate_pdf(string $p, int $deg): bool {
+  if (!is_file($p) || filesize($p) > FLP_MAX_UPLOAD) return false;
+  $s = file_get_contents($p);
+  $n = 0;
+  $s2 = preg_replace_callback('~(<<(?:(?!>>).)*?/Type\s*/Page(?![a-zA-Z])(?:(?!>>).)*?)(>>)~s', function ($m) use ($deg, &$n) {
+    $n++;
+    $d = $m[1];
+    if (preg_match('~/Rotate\s+(-?\d+)~', $d, $r)) {
+      $v = ((((int)$r[1] + $deg) % 360) + 360) % 360;
+      $d = preg_replace('~/Rotate\s+-?\d+~', '/Rotate ' . $v, $d, 1);
+    } else $d .= ' /Rotate ' . ((($deg % 360) + 360) % 360) . ' ';
+    return $d . $m[2];
+  }, $s);
+  if (!$n || $s2 === null) return false;      // PDF compressé autrement : non modifiable ici
+  // les longueurs ont changé : on reconstruit la table d'index (xref) pour que le PDF reste impeccable
+  $px = strrpos($s2, "\nxref"); $pt = strrpos($s2, 'trailer');
+  if ($px === false || $pt === false || $pt < $px) return false;   // index en flux compressé : on n'y touche pas
+  if (!preg_match('~trailer\s*(<<.*?>>)\s*startxref~s', substr($s2, $pt), $tm)) return false;
+  $body = substr($s2, 0, $px + 1);
+  preg_match_all('~(?<=\n|\r)(\d+)\s+(\d+)\s+obj\b~', $body, $om, PREG_OFFSET_CAPTURE);
+  if (!$om[0]) return false;
+  $off = []; foreach ($om[1] as $i => $m) $off[(int)$m[0]] = $om[0][$i][1];
+  $size = max(array_keys($off)) + 1;
+  $x = "xref\n0 $size\n0000000000 65535 f \n";
+  for ($i = 1; $i < $size; $i++) $x .= isset($off[$i]) ? sprintf("%010d 00000 n \n", $off[$i]) : "0000000000 65535 f \n";
+  $trailer = preg_replace('~/Size\s+\d+~', '/Size ' . $size, $tm[1]);
+  $s2 = $body . $x . "trailer\n" . $trailer . "\nstartxref\n" . strlen($body) . "\n%%EOF\n";
+  $tmp = $p . '.tmp';
+  if (file_put_contents($tmp, $s2) === false) return false;
+  return rename($tmp, $p);
+}
+function flp_rotate_thumb(int $id, int $deg): bool {
+  $t = flp_thumb_path($id);
+  if (!is_file($t)) return true;
+  $img = @imagecreatefromjpeg($t); if (!$img) return true;
+  $r = imagerotate($img, -$deg, 0); imagejpeg($r, $t, 85); imagedestroy($img); imagedestroy($r);
+  return true;
 }
 
 /* ---------- Apprentissage : fournisseur → catégorie + mots typiques ---------- */

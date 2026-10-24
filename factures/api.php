@@ -294,8 +294,8 @@ if ($a === 'delete') {
 if ($a === 'rotate') {
   $id = (int)$in('id'); $deg = (int)$in('deg') === -90 ? -90 : ((int)$in('deg') === 180 ? 180 : 90);
   $x = $find(flp_read()['items'], $id);
-  if (!$x || !in_array($x['ext'], ['jpg', 'png', 'webp'], true)) flp_json(['ok' => false, 'msg' => 'Rotation possible seulement sur une photo.'], 422);
-  if (!flp_rotate($x, $deg)) flp_json(['ok' => false, 'msg' => 'Rotation impossible.'], 500);
+  if (!$x || !in_array($x['ext'], ['jpg', 'png', 'webp', 'pdf'], true)) flp_json(['ok' => false, 'msg' => 'Rotation impossible pour ce fichier.'], 422);
+  if (!flp_rotate($x, $deg)) flp_json(['ok' => false, 'msg' => $x['ext'] === 'pdf' ? 'Ce PDF ne peut pas être tourné ici.' : 'Rotation impossible.'], 422);
   $x = flp_write(function (&$d) use ($id) { foreach ($d['items'] as &$y) if ((int)$y['id'] === $id) { $y['thumb'] = true; $y['hash'] = sha1_file(flp_file_path($y)); $y['rot'] = time(); return $y; } });
   flp_json(['ok' => true, 'item' => $x]);
 }

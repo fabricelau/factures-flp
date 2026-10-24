@@ -138,6 +138,22 @@
       return b && b.size < file.size ? new File([b], (file.name || 'photo').replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : file;
     } catch (e) { return file; }
   }
+  /* Photos → un PDF (une page par image, à la taille de l'image : rien n'est déformé ni rogné) */
+  async function toPdf(sources, name = 'facture.pdf', quality = 0.84) {
+    const { jsPDF } = await lib('jspdf');
+    let pdf = null;
+    for (const src of sources) {
+      let c = src;
+      if (!(src instanceof HTMLCanvasElement)) { const im = await loadImage(src); c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight; c.getContext('2d').drawImage(im, 0, 0); }
+      let wmm = 210, hmm = 210 * c.height / c.width;
+      if (hmm > 5000) { wmm = wmm * 5000 / hmm; hmm = 5000; }     // ticket très long : limite d'une page PDF
+      const o = hmm >= wmm ? 'p' : 'l';
+      if (!pdf) pdf = new jsPDF({ unit: 'mm', format: [wmm, hmm], orientation: o, compress: true });
+      else pdf.addPage([wmm, hmm], o);
+      pdf.addImage(c.toDataURL('image/jpeg', quality), 'JPEG', 0, 0, wmm, hmm, undefined, 'FAST');
+    }
+    return new File([pdf.output('blob')], name, { type: 'application/pdf' });
+  }
   /* Petite image pour la miniature */
   async function thumbOf(source, max = 600) {
     const img = source instanceof HTMLCanvasElement ? source : await loadImage(source);
@@ -213,6 +229,8 @@
       vh = await vhash(f);
       step('Lecture de la facture…');
       try { text = await ocr(f); } catch (e) { console.warn(e); }
+      // enregistrée en PDF (comme les scans)
+      try { thumb = await thumbOf(f); step('Conversion en PDF…'); f = await toPdf([f], (file.name || 'facture').replace(/\.\w+$/, '') + '.pdf'); } catch (e) { console.warn(e); }
     }
     const guess = (text || vh) && G.FLPExtract ? G.FLPExtract.extract(text, learn || [], { vh }) : null;
     return { file: f, thumb, text, pages, guess, vh };
@@ -296,6 +314,6 @@
   }
 
   G.FLPC = { api, vhash, hamming, setToken, token: () => TOKEN, dialog, alertBox, confirmBox, formBox, toast, theme, lib, pdfLib, ocr, ocrWarm, readPdf,
-    isHeic, heicToJpeg, compress, thumbOf, loadImage, canvasToBlob, prepare, uploadForm, eur, frDate, MOIS, esc, $ };
+    isHeic, heicToJpeg, compress, toPdf, thumbOf, loadImage, canvasToBlob, prepare, uploadForm, eur, frDate, MOIS, esc, $ };
   theme();
 })(window);

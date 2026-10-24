@@ -281,7 +281,7 @@
     const x = byId(id); if (!x) return; cur = x;
     $('#sheetView').innerHTML = sheetView(x);
     $('#sheetTools').hidden = !ADMIN || x.type === 'km';
-    $('#sheetTools').querySelectorAll('[data-act^=rot]').forEach(b => b.hidden = !['jpg', 'png', 'webp'].includes(x.ext));
+    $('#sheetTools').querySelectorAll('[data-act^=rot]').forEach(b => b.hidden = !['jpg', 'png', 'webp', 'pdf'].includes(x.ext));
     const f = $('#sheetForm'); f.innerHTML = fieldHTML(x, !ADMIN) + `<p class="sheet-meta">${x.source === 'scan' ? 'Scannée' : x.source === 'partage' ? 'Partagée' : x.source === 'saisie' ? 'Saisie' : 'Importée'} le ${frDate((x.added || '').slice(0, 10))}${x.ext ? ` · <a href="${fileUrl(x, true)}">Télécharger l’original</a>` : ''}${x.dbx ? ' · copiée dans Dropbox' : ''}</p>`;
     bindForm(f, x);
     $('#sheet').hidden = false;

@@ -257,22 +257,13 @@
     try {
       busy('Préparation…');
       let file, first = pages[0].canvas, nb = pages.length;
+      // toujours enregistrée en PDF : 1 page, plusieurs pages, ou ticket long recollé en une seule page
+      busy('Création du PDF…');
       if (mode === 'long' && pages.length > 1) {
         first = S.stitch(pages.map(p => p.canvas)); nb = 1;
-        file = new File([await C.canvasToBlob(first, 'image/jpeg', 0.85)], 'ticket.jpg', { type: 'image/jpeg' });
-      } else if (pages.length > 1) {
-        busy('Assemblage du PDF…');
-        const { jsPDF } = await C.lib('jspdf');
-        let pdf = null;
-        for (const p of pages) {
-          const c = p.canvas, wmm = 210, hmm = Math.round(210 * c.height / c.width);
-          if (!pdf) pdf = new jsPDF({ unit: 'mm', format: [wmm, hmm], orientation: hmm > wmm ? 'p' : 'l', compress: true });
-          else pdf.addPage([wmm, hmm], hmm > wmm ? 'p' : 'l');
-          pdf.addImage(c.toDataURL('image/jpeg', 0.82), 'JPEG', 0, 0, wmm, hmm);
-        }
-        file = new File([pdf.output('blob')], 'facture.pdf', { type: 'application/pdf' });
+        file = await C.toPdf([first], 'ticket.pdf', 0.85);
       } else {
-        file = new File([await C.canvasToBlob(first, 'image/jpeg', 0.84)], 'facture.jpg', { type: 'image/jpeg' });
+        file = await C.toPdf(pages.map(p => p.canvas), 'facture.pdf', 0.84);
       }
       const thumb = await C.thumbOf(first);
       // Envoi tout de suite, SANS attendre la lecture : la facture est en sécurité sur le site
@@ -341,7 +332,9 @@
           const res = await C.api('upload', C.uploadForm(prep, { source: 'scan' }));
           await Outbox.remove(rec.id);
           last = res;
-          if (!wantLast && !rec.text && res.item && prep.file.type.startsWith('image/'))
+          if (!wantLast && !rec.text && res.item && prep.file.type === 'application/pdf')
+            C.readPdf(prep.file).then(r => readLater(res.item.id, ocrCanvas(r.canvas), false, rec.vh)).catch(() => {});
+          else if (!wantLast && !rec.text && res.item && prep.file.type.startsWith('image/'))
             C.loadImage(prep.file).then(im => { const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight; c.getContext('2d').drawImage(im, 0, 0); readLater(res.item.id, ocrCanvas(c), false, rec.vh); }).catch(() => {});
           if (!wantLast) C.toast('Facture envoyée ✓', 'ok');
         } catch (e) {
