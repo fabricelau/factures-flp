@@ -137,7 +137,7 @@ if ($a === 'upload') {
     flp_apply_fields($x, $in, false);
     $x['texte']  = mb_substr($in('texte'), 0, 20000);
     $x['doutes'] = array_values(array_unique(array_merge($x['doutes'], array_intersect(array_map('trim', explode(',', $in('doutes'))), FLP_DOUBT_KEYS))));
-    $x['source'] = in_array($in('source'), ['scan', 'import', 'partage'], true) ? $in('source') : 'import';
+    $x['source'] = in_array($in('source'), ['scan', 'import', 'partage', 'dropbox'], true) ? $in('source') : 'import';
     $x['pages']  = max(1, min(200, (int)$in('pages', '1')));
     $x['vh']     = preg_match('/^[0-9a-f]{768}$/', $in('vh')) ? $in('vh') : '';
     $x['ext'] = $ext; $x['hash'] = $hash; $x['added'] = date('c');
@@ -473,6 +473,16 @@ if ($a === 'update_check' || $a === 'update_run') {
 /* ===================================================================
    DROPBOX : envoyer maintenant ce qui manque
    =================================================================== */
+/* Import depuis Dropbox : liste d'un dossier, puis contenu d'un fichier (réservé à l'administrateur) */
+if ($a === 'dbx_list' || $a === 'dbx_get') {
+  if ($role !== 'admin') flp_json(['ok' => false, 'msg' => 'Accès réservé.'], 403);
+  require_once __DIR__ . '/dropbox.php';
+  if (!flp_dbx_ready()) flp_json(['ok' => false, 'msg' => 'Reliez d’abord Dropbox dans Réglages → Dropbox.'], 422);
+  $path = (string)($_GET['path'] ?? '');
+  if ($path !== '' && ($path[0] !== '/' || strpos($path, "\0") !== false || strlen($path) > 1000)) flp_json(['ok' => false, 'msg' => 'Chemin invalide.'], 422);
+  if ($a === 'dbx_list') flp_json(flp_dbx_list($path));
+  flp_dbx_stream($path);
+}
 if ($a === 'dropbox_sync') {
   if ($role !== 'admin') flp_json(['ok' => false], 403);
   require_once __DIR__ . '/dropbox.php';

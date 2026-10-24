@@ -33,7 +33,7 @@ $admin = flp_is_admin();
   <div class="top-act">
     <?php if ($admin): ?>
     <a class="btn btn-acc" href="<?= $base ?>scan"><svg viewBox="0 0 24 24"><path d="M4 7V5a1 1 0 0 1 1-1h2M20 7V5a1 1 0 0 0-1-1h-2M4 17v2a1 1 0 0 0 1 1h2M20 17v2a1 1 0 0 1-1 1h-2M3 12h18"/></svg><span>Scanner</span></a>
-    <label class="btn" for="imp"><svg viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg><span>Importer</span></label>
+    <button class="btn" id="impBtn" type="button"><svg viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg><span>Importer</span></button>
     <input id="imp" type="file" accept="image/*,application/pdf,.heic,.heif" multiple hidden>
     <?php endif; ?>
     <button class="btn btn-ic" id="menuBtn" aria-label="Menu"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>

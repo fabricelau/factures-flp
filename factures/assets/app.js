@@ -309,7 +309,7 @@
     $('#sheetView').innerHTML = sheetView(x);
     $('#sheetTools').hidden = !ADMIN || x.type === 'km';
     $('#sheetTools').querySelectorAll('[data-act^=rot]').forEach(b => b.hidden = !['jpg', 'png', 'webp', 'pdf'].includes(x.ext));
-    const f = $('#sheetForm'); f.innerHTML = (x.ext ? `<button type="button" class="btn btn-share" data-share="${x.id}"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Exporter cette facture</button>` : '') + fieldHTML(x, !ADMIN) + `<p class="sheet-meta">${x.source === 'scan' ? 'Scannée' : x.source === 'partage' ? 'Partagée' : x.source === 'saisie' ? 'Saisie' : 'Importée'} le ${frDate((x.added || '').slice(0, 10))}${x.ext ? ` · <a href="${fileUrl(x, true)}">Télécharger</a>` : ''}${x.dbx ? ' · copiée dans Dropbox' : ''}</p>`;
+    const f = $('#sheetForm'); f.innerHTML = (x.ext ? `<button type="button" class="btn btn-share" data-share="${x.id}"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Exporter cette facture</button>` : '') + fieldHTML(x, !ADMIN) + `<p class="sheet-meta">${x.source === 'scan' ? 'Scannée' : x.source === 'partage' ? 'Partagée' : x.source === 'dropbox' ? 'Importée depuis Dropbox' : x.source === 'saisie' ? 'Saisie' : 'Importée'} le ${frDate((x.added || '').slice(0, 10))}${x.ext ? ` · <a href="${fileUrl(x, true)}">Télécharger</a>` : ''}${x.dbx ? ' · copiée dans Dropbox' : ''}</p>`;
     bindForm(f, x);
     $('#sheet').hidden = false;
     $('#sheetView').onclick = () => { if (x.type !== 'km') openViewer(visible(), visible().findIndex(y => +y.id === +x.id)); };
@@ -508,6 +508,66 @@
     progress('');
     C.toast(`${ok} facture${ok > 1 ? 's' : ''} ajoutée${ok > 1 ? 's' : ''}${dup ? ` · ${dup} doublon(s) possible(s)` : ''}.`, 'ok');
     await load();
+  }
+  /* ===================== Importer : depuis l'iPhone ou directement depuis Dropbox ===================== */
+  if (ADMIN) $('#impBtn').addEventListener('click', () => {
+    if (!S.cfg || !S.cfg.dropbox) { $('#imp').click(); return; }      // Dropbox pas relié : sélecteur de fichiers direct
+    const w = document.createElement('div'); w.className = 'dlg';
+    w.innerHTML = `<div class="dlg-bg"></div><div class="dlg-box imp-choice" role="dialog" aria-modal="true"><h3>Importer</h3>
+      <div class="imp-opts">
+        <label class="imp-opt" for="imp"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg><b>Depuis l’iPhone</b><span>Photos, Fichiers</span></label>
+        <button type="button" class="imp-opt" id="impDbx"><svg viewBox="0 0 24 24"><path d="M7 3l5 3.2L7 9.4 2 6.2zM17 3l5 3.2-5 3.2-5-3.2zM2 12.6l5-3.2 5 3.2-5 3.2zM22 12.6l-5-3.2-5 3.2 5 3.2zM7 17l5 3.2 5-3.2-5-3.2z"/></svg><b>Depuis Dropbox</b><span>Vos dossiers</span></button>
+      </div><div class="dlg-foot"><button type="button" class="btn" data-x>Annuler</button></div></div>`;
+    document.body.appendChild(w);
+    const close = () => w.remove();
+    w.querySelector('.dlg-bg').onclick = close; w.querySelector('[data-x]').onclick = close;
+    w.querySelector('label[for=imp]').addEventListener('click', () => setTimeout(close, 50));   // le sélecteur de l'iPhone s'ouvre (même geste)
+    w.querySelector('#impDbx').onclick = () => { close(); openDropboxPicker(); };
+  });
+  async function openDropboxPicker() {
+    let path = ''; try { path = localStorage.getItem('flp-dbx-path') || ''; } catch (e) {}
+    const chosen = new Map();
+    const r = await C.dialog({ title: 'Importer depuis Dropbox', wide: true,
+      html: `<div class="dbx-crumbs" id="dbxCrumbs"></div><div class="dbx-list" id="dbxList"><p class="muted">Chargement…</p></div>`,
+      buttons: [{ label: 'Annuler', value: null }, { label: 'Importer', primary: true, value: () => [...chosen.values()] }],
+      onOpen: w => {
+        const okBtn = w.querySelector('.dlg-foot .btn-acc');
+        const upd = () => { okBtn.textContent = chosen.size ? `Importer (${chosen.size})` : 'Importer'; okBtn.disabled = !chosen.size; };
+        const show = async p => {
+          path = p; try { localStorage.setItem('flp-dbx-path', p); } catch (e) {}
+          const parts = p.split('/').filter(Boolean);
+          w.querySelector('#dbxCrumbs').innerHTML = `<button type="button" data-go="">Dropbox</button>` + parts.map((n, i) => `<span>›</span><button type="button" data-go="/${esc(parts.slice(0, i + 1).join('/'))}">${esc(n)}</button>`).join('');
+          const L = w.querySelector('#dbxList'); L.innerHTML = '<p class="muted">Chargement…</p>';
+          let j; try { j = await C.api('dbx_list', null, { qs: '&path=' + encodeURIComponent(p) }); }
+          catch (e) { if (p) return show(''); L.innerHTML = `<p class="err-txt">${esc(e.message)}</p>`; return; }
+          if (path !== p) return;
+          if (!j.items.length) { L.innerHTML = '<p class="muted">Aucune photo ni PDF dans ce dossier.</p>'; return; }
+          L.innerHTML = j.items.map(it => it.t === 'd'
+            ? `<button type="button" class="dbx-it dir" data-go="${esc(it.p)}"><svg viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><b>${esc(it.n)}</b><svg class="go" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>`
+            : `<button type="button" class="dbx-it file${chosen.has(it.p) ? ' on' : ''}" data-f="${esc(it.p)}" data-n="${esc(it.n)}"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><b>${esc(it.n)}</b><small>${it.d ? frDate(it.d) + ' · ' : ''}${Math.max(1, Math.round(it.s / 1024))} Ko</small><span class="ck"></span></button>`).join('');
+        };
+        w.addEventListener('click', e => {
+          const g = e.target.closest('[data-go]'); if (g) { show(g.dataset.go); return; }
+          const f = e.target.closest('[data-f]'); if (!f) return;
+          if (chosen.has(f.dataset.f)) chosen.delete(f.dataset.f); else chosen.set(f.dataset.f, { p: f.dataset.f, n: f.dataset.n });
+          f.classList.toggle('on', chosen.has(f.dataset.f)); upd();
+        });
+        upd(); show(path);
+      } });
+    if (!r || !r.length) return;
+    const files = [];
+    for (let i = 0; i < r.length; i++) {
+      progress(`${i + 1}/${r.length} · Récupération dans Dropbox…`, (i + 0.5) / r.length * 30);
+      try {
+        const res = await fetch(`${API}?a=dbx_get&path=${encodeURIComponent(r[i].p)}`, { credentials: 'same-origin' });
+        if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.msg || 'Téléchargement impossible.'); }
+        const b = await res.blob();
+        const type = /\.hei[cf]$/i.test(r[i].n) ? 'image/heic' : (b.type || (/\.pdf$/i.test(r[i].n) ? 'application/pdf' : 'image/jpeg'));
+        files.push(new File([b], r[i].n, { type }));
+      } catch (e) { C.toast(`${r[i].n} : ${e.message}`, 'err'); }
+    }
+    progress('');
+    if (files.length) handleFiles(files, { source: 'dropbox' });
   }
   if (ADMIN) {
     $('#imp').addEventListener('change', e => { handleFiles([...e.target.files]); e.target.value = ''; });

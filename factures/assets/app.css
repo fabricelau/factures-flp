@@ -263,3 +263,27 @@ body.offline .admin-only,body.offline #selBtn,body.offline #reviewBtn,body.offli
 .cards:not(.list) .card .dl{position:absolute;right:8px;bottom:8px;width:34px;height:34px;background:color-mix(in srgb,var(--ink) 85%,transparent)}
 .cards:not(.list) .card .info{padding-right:46px}
 body.selecting .card .dl{display:none}
+
+/* Importer : choix iPhone / Dropbox, et explorateur Dropbox */
+.imp-opts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0 4px}
+.imp-opt{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:16px;border-radius:12px;border:1px solid var(--line);background:var(--ink);color:var(--bone);cursor:pointer;text-align:left;font:inherit}
+.imp-opt:hover,.imp-opt:active{border-color:var(--acc)}
+.imp-opt svg{width:28px;height:28px;color:var(--acc);margin-bottom:6px}
+.imp-opt b{font:800 17px/1.1 var(--dsp);text-transform:uppercase}
+.imp-opt span{font-size:13px;color:var(--mute)}
+.dbx-crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:4px 0 10px;font-size:13.5px}
+.dbx-crumbs button{background:none;border:0;color:var(--acc);padding:4px 2px;font:inherit;cursor:pointer}
+.dbx-crumbs span{color:var(--mute)}
+.dbx-list{display:flex;flex-direction:column;max-height:55vh;overflow-y:auto;border:1px solid var(--line);border-radius:10px}
+.dbx-it{display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:4px 12px;padding:12px;border:0;border-bottom:1px solid var(--line);background:none;color:var(--bone);text-align:left;font:inherit;cursor:pointer}
+.dbx-it:last-child{border-bottom:0}
+.dbx-it svg{width:22px;height:22px;color:var(--mute)}
+.dbx-it.dir svg:first-child{color:var(--acc)}
+.dbx-it b{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dbx-it small{grid-column:2;color:var(--mute);font-size:12px}
+.dbx-it .ck{grid-row:1/3;grid-column:3;width:22px;height:22px;border-radius:50%;border:2px solid var(--line2)}
+.dbx-it.on{background:color-mix(in srgb,var(--acc) 10%,transparent)}
+.dbx-it.on .ck{background:var(--acc);border-color:var(--acc);box-shadow:inset 0 0 0 3px var(--ink2)}
+.dbx-it.file svg{grid-row:1/3}
+.err-txt{color:#ff8a7a;padding:12px}
+body.offline #impBtn{opacity:.4;pointer-events:none}
