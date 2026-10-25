@@ -309,3 +309,11 @@ body.offline #impBtn{opacity:.4;pointer-events:none}
 
 .cards.list .right{min-width:0;max-width:40vw}
 .cards.list .lbdg{flex-wrap:wrap}
+
+/* À vérifier : point orange et section en bas de liste */
+.vdot.todo{background:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 25%,transparent)}
+.todo-sec{margin-top:26px}
+.todo-sec .month-h{border-bottom-color:color-mix(in srgb,var(--acc) 50%,var(--line))}
+.todo-sec .month-h h2{color:var(--acc);display:flex;align-items:center;gap:10px}
+.todo-help{margin:8px 0 2px;font-size:13px;color:var(--mute)}
+.todo-sec.closed .todo-help{display:none}

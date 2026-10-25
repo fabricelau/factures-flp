@@ -28,6 +28,8 @@
   const fileUrl = (x, dl) => `${BASE}f/${x.id}/${encodeURIComponent(fileName(x))}?r=${x.rot || 0}${dl ? '&dl=1' : ''}`;
   const num = v => { const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')); return isNaN(n) ? null : n; };
   const ymd = d => d.toISOString().slice(0, 10);
+  // « à vérifier » = pas encore validée par vous (case verte) ; les frais km, saisis à la main, n'en ont pas besoin
+  const todo = x => x.type !== 'km' && !x.verifie;
   const dOf = x => x.date || (x.added || '').slice(0, 10);
 
   /* ===================== Chargement ===================== */
@@ -90,7 +92,7 @@
   function visible() {
     const a = S.adv, min = num(a.min), max = num(a.max);
     let r = S.items.filter(inTab);
-    if (S.filter === 'check') r = r.filter(x => x.check);
+    if (S.filter === 'check') r = r.filter(todo);
     else if (S.filter === 'dup') r = r.filter(x => S.dup.has(+x.id));
     else if (S.filter === 'sent') r = r.filter(x => x.transmis);
     else if (S.filter === 'unsent') r = r.filter(x => !x.transmis);
@@ -134,7 +136,7 @@
     $('#listView').hidden = false; $('#bordView').hidden = true;
     renderStats(); renderFilters();
     const n = advCount(); $('#advN').textContent = n || ''; $('#advBtn').classList.toggle('on', !!n);
-    const rb = $('#reviewBtn'); if (rb) { const k = S.items.filter(x => inTab(x) && x.check).length; rb.hidden = !k; rb.textContent = `Revue rapide (${k})`; }
+    const rb = $('#reviewBtn'); if (rb) { const k = S.items.filter(x => inTab(x) && todo(x)).length; rb.hidden = !k; rb.textContent = `Revue rapide (${k})`; }
     document.body.classList.toggle('selecting', S.selecting);
     const list = visible(), app = $('#app');
     if (!list.length) {
@@ -143,9 +145,16 @@
       return;
     }
     const cls = S.view === 'list' ? 'cards list' : 'cards';
+    // les factures pas encore validées par vous attendent tout en bas, dans « À vérifier »
+    const waiting = list.filter(todo), done = list.filter(x => !todo(x));
+    const waitHtml = waiting.length ? `<section class="month todo-sec${S.closed.todo ? ' closed' : ''}" data-k="todo">
+          <div class="month-h"><h2><span class="vdot todo"></span> À vérifier</h2><span class="n">${waiting.length} facture${waiting.length > 1 ? 's' : ''}</span>
+          <span class="tot">${eur(waiting.reduce((t, x) => t + (x.montant || 0), 0))}</span><svg class="car" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+          <p class="todo-help">Ouvrez chaque facture, contrôlez-la, puis cochez la case verte « Vérifiée » : elle rejoint son mois.</p>
+          <div class="${cls}">${waiting.slice().sort((a, b) => dOf(b).localeCompare(dOf(a)) || b.id - a.id).map(card).join('')}</div></section>` : '';
     if (S.sort.startsWith('date')) {
       const groups = new Map();
-      for (const x of list) { const k = dOf(x).slice(0, 7) || '0000-00'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); }
+      for (const x of done) { const k = dOf(x).slice(0, 7) || '0000-00'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); }
       let html = '';
       for (const [k, g] of groups) {
         const tot = g.reduce((s, x) => s + (x.montant || 0), 0);
@@ -155,12 +164,11 @@
           <span class="tot">${eur(tot)}</span><svg class="car" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
           <div class="${cls}">${g.map(card).join('')}</div></section>`;
       }
-      app.innerHTML = html;
-    } else app.innerHTML = `<div class="${cls}" style="margin-top:14px">${list.map(card).join('')}</div>`;
+      app.innerHTML = html + waitHtml;
+    } else app.innerHTML = (done.length ? `<div class="${cls}" style="margin-top:14px">${done.map(card).join('')}</div>` : '') + waitHtml;
   }
   function badges(x) {
     let b = '';
-    if (x.check) b += '<span class="bdg">À vérifier</span>';
     if (S.dup.has(+x.id)) b += '<span class="bdg dup">Doublon ?</span>';
     if (x.transmis) b += '<span class="bdg sent">Transmise</span>';
     if (x.pages > 1) b += `<span class="bdg pg">${x.pages} p.</span>`;
@@ -177,9 +185,9 @@
     const dl = x.ext ? `<span class="dl" role="button" tabindex="0" data-share="${x.id}" title="Télécharger cette facture" aria-label="Télécharger ${title}"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span>` : '<span class="dl dl-none"></span>';
     if (S.view === 'list') return `<button class="card${sel}" data-id="${x.id}"><span class="tick"></span>
       <div class="info"><h3>${title}</h3><div class="meta">${frDate(x.date)}${x.categorie ? ' · ' + esc(x.categorie) : ''}</div></div>
-      <div class="right"><div class="mt">${eur(x.montant)}${conv}</div><div class="lbdg">${badges(x)}</div></div>${x.verifie ? '<span class="vdot" title="Vérifiée par vous"></span>' : '<span class="vdot off"></span>'}${dl}</button>`;
+      <div class="right"><div class="mt">${eur(x.montant)}${conv}</div><div class="lbdg">${badges(x)}</div></div>${x.verifie ? '<span class="vdot" title="Vérifiée par vous"></span>' : todo(x) ? '<span class="vdot todo" title="À vérifier"></span>' : '<span class="vdot off"></span>'}${dl}</button>`;
     return `<button class="card${sel}" data-id="${x.id}"><span class="tick"></span>${pic.replace('</div>', `<div class="badges">${badges(x)}</div></div>`)}
-      <div class="info"><h3>${title}${x.verifie ? ' <span class="vdot" title="Vérifiée par vous"></span>' : ''}</h3><div class="mt">${eur(x.montant)}${conv}</div><div class="meta">${frDate(x.date)}</div>
+      <div class="info"><h3>${title}${x.verifie ? ' <span class="vdot" title="Vérifiée par vous"></span>' : todo(x) ? ' <span class="vdot todo" title="À vérifier"></span>' : ''}</h3><div class="mt">${eur(x.montant)}${conv}</div><div class="meta">${frDate(x.date)}</div>
       ${x.categorie ? `<span class="cat">${esc(x.categorie)}</span>` : ''}</div>${dl}</button>`;
   }
   function renderStats() {
@@ -190,7 +198,7 @@
     const before = tot(mine.filter(x => x.year === prev && dOf(x).slice(5) <= today));
     let cmp = '';
     if (before > 0) { const p = Math.round((cur - before) / before * 100); cmp = `<em class="${p > 0 ? (S.tab === 'vente' ? 'down' : 'up') : (S.tab === 'vente' ? 'up' : 'down')}">${p > 0 ? '+' : ''}${p} % vs ${prev} à date</em>`; }
-    const nCheck = mine.filter(x => x.check).length;
+    const nCheck = mine.filter(todo).length;
     $('#stats').innerHTML = `
       <div class="stat"><b>${mine.length}</b><span>facture${mine.length > 1 ? 's' : ''} ${S.tab === 'vente' ? 'émise' + (mine.length > 1 ? 's' : '') : 'reçue' + (mine.length > 1 ? 's' : '')}</span></div>
       <div class="stat acc"><b>${eur(cur)}</b><span>${S.tab === 'vente' ? 'facturé' : 'dépensé'} en ${yr}</span>${cmp}</div>
@@ -199,7 +207,7 @@
   function renderFilters() {
     const mine = S.items.filter(inTab);
     const years = [...new Set(mine.map(x => x.year).filter(Boolean))].sort().reverse();
-    const nc = mine.filter(x => x.check).length, nd = mine.filter(x => S.dup.has(+x.id)).length, ns = mine.filter(x => !x.transmis).length;
+    const nc = mine.filter(todo).length, nd = mine.filter(x => S.dup.has(+x.id)).length, ns = mine.filter(x => !x.transmis).length;
     const chip = (f, label, n, cls = '') => `<button class="chip ${cls}" data-f="${f}" aria-pressed="${S.filter === f}">${label} <small>${n}</small></button>`;
     let h = '';
     if (nc) h += chip('check', 'À vérifier', nc, 'warn');
@@ -246,7 +254,6 @@
       <label class="fld">N° de facture<input name="numero" value="${esc(x.numero)}" ${dis}></label>
       <label class="fld">Note<textarea name="note" rows="2" ${dis}>${esc(x.note)}</textarea></label>
       <label class="check"><input type="checkbox" name="transmis" value="1" ${x.transmis ? 'checked' : ''} ${dis}> Transmise au comptable${x.transmis ? ` <span class="muted">(${frDate(x.transmis.slice(0, 10))})</span>` : ''}</label>
-      <label class="check"><input type="checkbox" name="check" value="1" ${x.check && !x.verifie ? 'checked' : ''} ${dis}> À vérifier</label>
       <label class="verif${x.verifie ? ' on' : ''}"><input type="checkbox" name="verifie" value="1" ${x.verifie ? 'checked' : ''} ${dis}><span class="vbox"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span><b>Vérifiée</b><small>${x.verifie ? `par vous le ${frDate(String(x.verifie).slice(0, 10))}` : 'cochez quand vous avez contrôlé la facture vous-même'}</small></span></label>
       ${ro ? '' : `<div class="sheet-foot"><button type="button" class="btn btn-del" data-act="trash">Corbeille</button><button type="submit" class="btn btn-acc">Enregistrer</button></div>`}
       <datalist id="socList">${[...new Set(S.items.filter(y => y.sens === x.sens).map(y => y.societe).filter(Boolean))].map(s => `<option value="${esc(s)}">`).join('')}</datalist>`;
@@ -284,8 +291,7 @@
     return Math.round((km <= 5000 ? km * b[0] : km <= 20000 ? km * b[1] + b[2] : km * b[3]) * 100) / 100;
   }
   document.addEventListener('change', e => {
-    if (e.target.name === 'verifie') { const f = e.target.form; e.target.closest('.verif').classList.toggle('on', e.target.checked); if (e.target.checked && f.check) f.check.checked = false; }
-    if (e.target.name === 'check' && e.target.checked && e.target.form.verifie) { e.target.form.verifie.checked = false; e.target.form.verifie.closest('.verif').classList.remove('on'); }
+    if (e.target.name === 'verifie') { const f = e.target.form; e.target.closest('.verif').classList.toggle('on', e.target.checked); }
   });
   function formData(form) {
     const o = {};
@@ -494,7 +500,7 @@
     $('#selSent').onclick = () => bulk('transmis', '1', '{n} facture(s) marquées « transmises ».');
     $('#selOk').onclick = () => bulk('check', '0', '{n} facture(s) marquées vérifiées.');
     $('#selTrash').onclick = async () => { if (await C.confirmBox(`Mettre ${S.sel.size} facture(s) à la corbeille ?`, { ok: 'Corbeille', danger: true })) bulk('trash', '1', '{n} facture(s) à la corbeille.'); };
-    $('#reviewBtn').onclick = () => openViewer(S.items.filter(x => inTab(x) && x.check).sort((a, b) => dOf(b).localeCompare(dOf(a))), 0, true);
+    $('#reviewBtn').onclick = () => openViewer(S.items.filter(x => inTab(x) && todo(x)).sort((a, b) => dOf(b).localeCompare(dOf(a))), 0, true);
   }
 
   /* ===================== Corbeille ===================== */
