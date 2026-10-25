@@ -336,6 +336,7 @@
       catch (err) { C.toast(err.message, 'err'); }
     }
     if (act === 'replace') $('#replaceInput').click();
+    if (act === 'addpage') $('#addPageInput').click();
     if (act === 'relire') relireForm(cur, $('#sheetForm'));
   });
   $('#replaceInput').addEventListener('change', async e => {
@@ -348,6 +349,38 @@
       const r = await C.api('replace', fd); replaceItem(r.item); cur = r.item; $('#sheetView').innerHTML = sheetView(cur); render();
       C.toast('Fichier remplacé.', 'ok');
     } catch (err) { C.toast(err.message, 'err'); } finally { progress(''); }
+  });
+  /* Ajouter une ou plusieurs pages (photo ou PDF) à la fin de la facture : un seul PDF en sortie */
+  $('#addPageInput').addEventListener('change', async e => {
+    const add = [...e.target.files]; e.target.value = ''; if (!add.length || !cur) return;
+    const x = cur;
+    try {
+      progress('Lecture de la facture actuelle…');
+      const pages = []; let text = x.texte || '';
+      if (x.ext) {
+        const blob = await fetch(fileUrl(x), { credentials: 'same-origin' }).then(r => { if (!r.ok) throw new Error('Fichier actuel introuvable.'); return r.blob(); });
+        const curFile = new File([blob], 'actuel.' + x.ext, { type: blob.type || (x.ext === 'pdf' ? 'application/pdf' : 'image/jpeg') });
+        if (x.ext === 'pdf') { const r = await C.pdfPages(curFile); if (r.total > r.canvases.length) throw new Error(`Facture de plus de ${r.canvases.length} pages : ajout impossible ici.`); pages.push(...r.canvases); }
+        else pages.push(await C.imageCanvas(curFile));
+      }
+      const before = pages.length;
+      for (let i = 0; i < add.length; i++) {
+        progress(`Ajout ${i + 1}/${add.length}…`);
+        const f = add[i];
+        if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) { const r = await C.pdfPages(f); pages.push(...r.canvases); if (r.text) text += '\n' + r.text; }
+        else pages.push(await C.imageCanvas(f));
+      }
+      if (pages.length > 60) throw new Error('60 pages maximum.');
+      progress('Création du PDF…');
+      const pdf = await C.toPdf(pages, 'facture.pdf', 0.85);
+      const fd = new FormData(); fd.set('id', x.id); fd.set('file', pdf, 'facture.pdf'); fd.set('pages', pages.length);
+      const th = await C.thumbOf(pages[0]); if (th) fd.set('thumb', th, 'thumb.jpg');
+      if (text) fd.set('texte', text.slice(0, 20000));
+      progress('Envoi…');
+      const r = await C.api('replace', fd); replaceItem(r.item); cur = r.item; $('#sheetView').innerHTML = sheetView(cur); render();
+      const n = pages.length - before;
+      C.toast(`${n} page${n > 1 ? 's' : ''} ajoutée${n > 1 ? 's' : ''} — la facture compte maintenant ${pages.length} pages.`, 'ok');
+    } catch (err) { C.toast(err.message || 'Ajout impossible.', 'err'); } finally { progress(''); }
   });
   /* Relire une facture (nouvelle lecture automatique) et préremplir le formulaire */
   async function guessFor(x, onStep) {

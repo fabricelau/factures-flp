@@ -138,6 +138,34 @@
       return b && b.size < file.size ? new File([b], (file.name || 'photo').replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : file;
     } catch (e) { return file; }
   }
+  /* Toutes les pages d'un PDF en images (pour l'assembler avec d'autres pages) */
+  async function pdfPages(file, { max = 30, side = 1800 } = {}) {
+    const pdfjs = await pdfLib();
+    const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+    const out = [];
+    let text = '';
+    for (let i = 1; i <= Math.min(doc.numPages, max); i++) {
+      const page = await doc.getPage(i);
+      try { const tc = await page.getTextContent(); text += tc.items.map(it => it.str).join(' ') + '\n'; } catch (e) {}
+      const vp = page.getViewport({ scale: 1 });
+      const v2 = page.getViewport({ scale: Math.min(3, side / Math.max(vp.width, vp.height)) });
+      const c = document.createElement('canvas'); c.width = Math.round(v2.width); c.height = Math.round(v2.height);
+      const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+      await page.render({ canvasContext: x, viewport: v2 }).promise;
+      out.push(c);
+    }
+    return { canvases: out, text: text.replace(/[ \t]+/g, ' ').trim(), total: doc.numPages };
+  }
+  /* Une photo (y compris HEIC) en image réduite */
+  async function imageCanvas(file, side = 2400) {
+    let f = file;
+    if (isHeic(f)) f = await heicToJpeg(f);
+    const im = await loadImage(f);
+    const k = Math.min(1, side / Math.max(im.naturalWidth, im.naturalHeight));
+    const c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
+    c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+    return c;
+  }
   /* Photos → un PDF (une page par image, à la taille de l'image : rien n'est déformé ni rogné) */
   async function toPdf(sources, name = 'facture.pdf', quality = 0.84) {
     const { jsPDF } = await lib('jspdf');
@@ -316,6 +344,6 @@
   }
 
   G.FLPC = { api, vhash, hamming, setToken, token: () => TOKEN, dialog, alertBox, confirmBox, formBox, toast, theme, lib, pdfLib, ocr, ocrWarm, readPdf,
-    isHeic, heicToJpeg, compress, toPdf, thumbOf, loadImage, canvasToBlob, prepare, uploadForm, eur, frDate, MOIS, esc, $ };
+    isHeic, heicToJpeg, compress, toPdf, pdfPages, imageCanvas, thumbOf, loadImage, canvasToBlob, prepare, uploadForm, eur, frDate, MOIS, esc, $ };
   theme();
 })(window);

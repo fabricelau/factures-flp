@@ -108,9 +108,11 @@ $admin = flp_is_admin();
     <div class="sheet-tools admin-only" id="sheetTools">
       <button class="btn btn-sm" data-act="rotl" title="Tourner à gauche">↺</button>
       <button class="btn btn-sm" data-act="rotr" title="Tourner à droite">↻</button>
+      <button class="btn btn-sm" data-act="addpage">+ Ajouter une page</button>
       <button class="btn btn-sm" data-act="replace">Remplacer le fichier</button>
       <button class="btn btn-sm" data-act="relire">Relire</button>
       <input type="file" id="replaceInput" accept="image/*,application/pdf,.heic,.heif" hidden>
+      <input type="file" id="addPageInput" accept="image/*,application/pdf,.heic,.heif" multiple hidden>
     </div>
     <form class="sheet-form" id="sheetForm" autocomplete="off"></form>
   </div>
