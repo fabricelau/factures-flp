@@ -47,8 +47,13 @@ function flp_dbx_delete(string $rel): void {
   flp_http(FLP_DBX_API . '/2/files/delete_v2', ['Authorization: Bearer ' . $t, 'Content-Type: application/json'],
     json_encode(['path' => flp_dbx_path($rel)]), 20);
 }
+/* Rangement : Reçues (ou Émises) / 2026 / 01 - Janvier / 2026-01-15_fournisseur_montant_12.pdf */
 function flp_dbx_rel(array $x): string {
-  return ($x['sens'] === 'vente' ? 'Émises' : 'Reçues') . '/' . ($x['year'] ?: 'Sans année') . '/' . flp_nice_name($x);
+  static $mois = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+  $top = $x['sens'] === 'vente' ? 'Émises' : 'Reçues';
+  if (preg_match('/^(\d{4})-(\d{2})-\d{2}$/', (string)$x['date'], $m)) $dir = $m[1] . '/' . $m[2] . ' - ' . $mois[(int)$m[2]];
+  else $dir = ($x['year'] ?: date('Y')) . '/Sans date';
+  return $top . '/' . $dir . '/' . flp_nice_name($x);
 }
 /* Copie une pièce si elle n'y est pas encore (ou si elle a changé de nom ou de contenu) */
 /* ---------- Import depuis Dropbox : parcourir les dossiers, récupérer un fichier ---------- */

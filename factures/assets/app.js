@@ -175,7 +175,7 @@
     const title = esc(x.type === 'km' ? (x.km?.trajet || 'Frais kilométriques') : (x.societe || 'Sans nom'));
     // icône de téléchargement de la facture seule (élément « bouton » dans la carte, qui est elle-même un bouton)
     const dl = x.ext ? `<span class="dl" role="button" tabindex="0" data-share="${x.id}" title="Télécharger cette facture" aria-label="Télécharger ${title}"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span>` : '<span class="dl dl-none"></span>';
-    if (S.view === 'list') return `<button class="card${sel}" data-id="${x.id}"><span class="tick"></span>${pic}
+    if (S.view === 'list') return `<button class="card${sel}" data-id="${x.id}"><span class="tick"></span>
       <div class="info"><h3>${title}</h3><div class="meta">${frDate(x.date)}${x.categorie ? ' · ' + esc(x.categorie) : ''}</div></div>
       <div class="right"><div class="mt">${eur(x.montant)}${conv}</div><div class="lbdg">${badges(x)}</div></div>${x.verifie ? '<span class="vdot" title="Vérifiée par vous"></span>' : '<span class="vdot off"></span>'}${dl}</button>`;
     return `<button class="card${sel}" data-id="${x.id}"><span class="tick"></span>${pic.replace('</div>', `<div class="badges">${badges(x)}</div></div>`)}
@@ -806,7 +806,7 @@
         <div class="line"><button class="btn btn-sm" id="gSave">Enregistrer</button></div></details>
 
       <h4>Dropbox</h4>
-      <div class="box">${s.dropbox_on ? `<span class="ok-txt">Connecté</span> à ${esc(s.dropbox_account)}. ${s.dropbox_when === 'tout' ? 'Chaque facture' : 'Chaque facture <b>vérifiée</b>'} est copiée dans <code>${esc(s.dropbox_folder)}</code>, rangée en Reçues / Émises puis par année, sous son nom « date – fournisseur – montant ». Si vous la modifiez, elle est renommée ; mise à la corbeille, elle est retirée.` : 'Non connecté. Une fois connecté, chaque facture vérifiée est copiée dans le dossier Dropbox de votre choix, rangée par année, avec la sauvegarde quotidienne.'}
+      <div class="box">${s.dropbox_on ? `<span class="ok-txt">Connecté</span> à ${esc(s.dropbox_account)}. ${s.dropbox_when === 'tout' ? 'Chaque facture' : 'Chaque facture <b>vérifiée</b>'} est copiée dans <code>${esc(s.dropbox_folder)}</code>, rangée en Reçues / Émises, puis par année et par mois (ex. <code>2026/01 - Janvier</code>), sous son nom « date – fournisseur – montant ». Si vous la modifiez, elle est renommée ; mise à la corbeille, elle est retirée.` : 'Non connecté. Une fois connecté, chaque facture vérifiée est copiée dans le dossier Dropbox de votre choix, rangée par année, avec la sauvegarde quotidienne.'}
         ${s.dropbox_on ? `<label class="fld">Copier dans Dropbox<select id="dWhen"><option value="verifie" ${s.dropbox_when !== 'tout' ? 'selected' : ''}>Seulement les factures vérifiées</option><option value="tout" ${s.dropbox_when === 'tout' ? 'selected' : ''}>Toutes, dès l’envoi</option></select></label>
         <label class="fld">Dossier dans Dropbox<input id="dFolder2" value="${esc(s.dropbox_folder)}" placeholder="/Compta/Factures"></label>
         <div class="line"><button class="btn btn-sm" id="dSave2">Enregistrer</button></div>` : ''}

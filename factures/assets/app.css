@@ -117,7 +117,7 @@ main{padding:6px var(--g) 0}
 .card.sel .tick{background:var(--acc);border-color:var(--acc)}
 .card.sel .tick::after{content:"";position:absolute;left:7px;top:3px;width:6px;height:11px;border:solid #0d1114;border-width:0 2.5px 2.5px 0;transform:rotate(45deg)}
 .cards.list{grid-template-columns:1fr;gap:0}
-.cards.list .card{display:grid;grid-template-columns:48px minmax(0,1fr) auto 12px 40px;gap:14px;align-items:center;border-radius:0;border-width:0 0 1px;background:none;padding:11px 4px}
+.cards.list .card{display:grid;grid-template-columns:minmax(0,1fr) auto 12px 40px;gap:14px;align-items:center;border-radius:0;border-width:0 0 1px;background:none;padding:11px 4px}
 .cards.list .card:hover{background:var(--ink2)}
 .cards.list .pic{aspect-ratio:1;width:48px;border-radius:7px;overflow:hidden}
 .cards.list .pic svg{width:22px;height:22px}
@@ -307,5 +307,5 @@ body.offline #impBtn{opacity:.4;pointer-events:none}
 .card h3 .vdot{width:9px;height:9px;margin-left:4px;vertical-align:2px}
 .vpill{display:flex;align-items:center;gap:9px;margin:0 0 8px;padding:9px 12px;border-radius:10px;background:color-mix(in srgb,var(--verif) 14%,transparent);color:var(--verif);font-weight:600;font-size:14px}
 
-.cards.list .right{min-width:0;max-width:32vw}
+.cards.list .right{min-width:0;max-width:40vw}
 .cards.list .lbdg{flex-wrap:wrap}
