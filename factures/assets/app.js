@@ -857,7 +857,7 @@
         q('#dSave') && (q('#dSave').onclick = () => save({ dropbox_key: q('#dKey').value.trim(), dropbox_secret: q('#dSecret').value.trim(), dropbox_folder: q('#dFolder').value.trim() }, 'Clés Dropbox enregistrées.'));
         q('#dOn') && (q('#dOn').onclick = () => { location.href = BASE + 'dropbox.php?start=1'; });
         q('#dOff') && (q('#dOff').onclick = async () => { if (await C.confirmBox('Déconnecter Dropbox ? Les fichiers déjà copiés y restent.', { ok: 'Déconnecter', danger: true })) save({ dropbox_off: '1' }, 'Dropbox déconnecté.'); });
-        q('#dSync') && (q('#dSync').onclick = async () => { q('#dSync').disabled = true; q('#dSync').textContent = 'Copie en cours…'; try { const r = await C.api('dropbox_sync'); C.toast(r.msg, 'ok'); } catch (e) { C.toast(e.message, 'err'); } q('#dSync').disabled = false; q('#dSync').textContent = 'Copier maintenant'; });
+        q('#dSync') && (q('#dSync').onclick = async () => { q('#dSync').disabled = true; q('#dSync').textContent = 'Copie en cours…'; try { const r = await C.api('dropbox_sync', {}); C.toast(r.msg, 'ok'); } catch (e) { C.toast(e.message, 'err'); } q('#dSync').disabled = false; q('#dSync').textContent = 'Copier maintenant'; });
         q('#cSave').onclick = () => { const p = q('#cPass').value; if (p.length < 8) return C.toast('8 caractères minimum.', 'err'); save({ compta: p }, 'Accès comptable enregistré.'); };
         q('#cOff') && (q('#cOff').onclick = () => save({ compta: '' }, 'Accès comptable retiré.'));
         q('#sSave').onclick = () => save({ email: q('#sEmail').value.trim() }, 'E-mail enregistré.');
