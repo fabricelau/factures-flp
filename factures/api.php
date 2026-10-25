@@ -69,6 +69,13 @@ function flp_apply_fields(array &$x, callable $in, bool $partial): void {
 if ($a === 'list') {
   $d = flp_read();
   $items = array_values(array_filter($d['items'], fn($x) => empty($x['trashed'])));
+  // noms de fichiers à jour (numéro -2, -3 seulement en cas de nom identique), calculés en un passage
+  $byBase = [];
+  foreach ($items as $i => $it) if (($it['type'] ?? 'piece') === 'piece') $byBase[flp_nice_base($it)][] = $i;
+  foreach ($byBase as $base => $idx) {
+    usort($idx, fn($a, $b) => (int)$items[$a]['id'] - (int)$items[$b]['id']);
+    foreach ($idx as $r => $i) $items[$i]['filename'] = $base . ($r ? '-' . ($r + 1) : '') . ($items[$i]['ext'] ? '.' . $items[$i]['ext'] : '');
+  }
   foreach ($items as &$it) unset($it['vh']); unset($it);       // empreintes : inutiles à l'affichage
   $trash = count($d['items']) - count($items);
   $soc = [];
@@ -144,7 +151,7 @@ if ($a === 'upload') {
     move_uploaded_file($tmp, flp_file_path($x)); @chmod(flp_file_path($x), 0600);
     $x['thumb'] = flp_save_client_thumb($id) || flp_make_thumb(flp_file_path($x), flp_thumb_path($id), $ext);
     $x['check'] = $x['societe'] === '' || $x['montant'] === null || $x['date'] === '' || !empty($x['doutes']);
-    $x['filename'] = flp_nice_name($x);
+    $x['filename'] = flp_nice_name($x, $d['items']);
     $d['items'][] = $x;
     return $x;
   });
@@ -175,7 +182,7 @@ if ($a === 'lu') {
       $dt = array_intersect(array_map('trim', explode(',', $in('doutes'))), FLP_DOUBT_KEYS);
       $x['doutes'] = array_values(array_unique(array_merge(array_diff($x['doutes'] ?? [], ['lecture']), array_intersect($dt, $filled), $x['texte'] === '' ? ['lecture'] : [])));
       $x['check'] = $x['check'] || $x['societe'] === '' || $x['montant'] === null || $x['date'] === '' || !empty($x['doutes']);
-      $x['filename'] = flp_nice_name($x);
+      $x['filename'] = flp_nice_name($x, $d['items']);
       return $x;
     }
     return null;
@@ -225,7 +232,7 @@ if ($a === 'save') {
       if (array_key_exists('verifie', $_POST)) $x['verifie'] = $in('verifie') === '1' ? ($x['verifie'] ?: date('c')) : false;
       if (!empty($x['verifie'])) $x['check'] = false;
       $x['doutes'] = [];
-      $x['filename'] = flp_nice_name($x);
+      $x['filename'] = flp_nice_name($x, $d['items']);
       return $x;
     }
     return null;
@@ -330,7 +337,7 @@ if ($a === 'replace') {
       $x['pages'] = max(1, (int)$in('pages', '1'));
       if ($in('texte') !== '') $x['texte'] = mb_substr($in('texte'), 0, 20000);
       $x['rot'] = time();
-      $x['filename'] = flp_nice_name($x);
+      $x['filename'] = flp_nice_name($x, $d['items']);
       return $x;
     }
     return null;

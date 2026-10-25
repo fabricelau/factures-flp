@@ -281,9 +281,23 @@ function flp_num($v): ?float {
 }
 function flp_file_path(array $x): string { return flp_files_dir() . '/' . $x['id'] . '.' . $x['ext']; }
 function flp_thumb_path(int $id): string { return flp_thumbs_dir() . '/' . $id . '.jpg'; }
-function flp_nice_name(array $x): string {
+/* Nom du fichier : date_fournisseur_montant.pdf — un numéro n'est ajouté (-2, -3…) que si une
+   autre facture porte exactement le même nom (même jour, même fournisseur, même montant). */
+function flp_nice_base(array $x): string {
   $m = $x['montant'] !== null ? '_' . number_format((float)$x['montant'], 2, ',', '') : '';
-  return ($x['date'] ?: 'sans-date') . '_' . flp_slug($x['societe'] ?: 'facture') . $m . '_' . $x['id'] . ($x['ext'] ? '.' . $x['ext'] : '');
+  return ($x['date'] ?: 'sans-date') . '_' . flp_slug($x['societe'] ?: 'facture') . $m;
+}
+function flp_nice_name(array $x, ?array $items = null): string {
+  static $cache = null;
+  if ($items === null) { if ($cache === null) $cache = flp_read()['items']; $items = $cache; }
+  $base = flp_nice_base($x);
+  $same = [];
+  foreach ($items as $y) {
+    if ((int)$y['id'] === (int)$x['id'] || !empty($y['trashed']) || ($y['type'] ?? 'piece') !== 'piece') continue;
+    if (flp_nice_base($y) === $base) $same[] = (int)$y['id'];
+  }
+  $rank = 1; foreach ($same as $id) if ($id < (int)$x['id']) $rank++;     // la plus ancienne garde le nom simple
+  return $base . ($rank > 1 ? '-' . $rank : '') . ($x['ext'] ? '.' . $x['ext'] : '');
 }
 
 /* ---------- Images (GD) ---------- */

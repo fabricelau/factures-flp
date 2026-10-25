@@ -23,7 +23,7 @@ if ($files && is_array($files['name'])) {
       $x = flp_normalize(['id' => $id, 'v' => 2, 'ext' => $ext, 'hash' => $hash, 'added' => date('c'), 'source' => 'partage', 'check' => true, 'year' => date('Y')]);
       move_uploaded_file($tmp, flp_file_path($x)); @chmod(flp_file_path($x), 0600);
       $x['thumb'] = flp_make_thumb(flp_file_path($x), flp_thumb_path($id), $ext);
-      $x['filename'] = flp_nice_name($x);
+      $x['filename'] = flp_nice_name($x, $d['items']);
       $d['items'][] = $x;
       return $id;
     });
