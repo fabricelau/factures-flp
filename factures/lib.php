@@ -283,6 +283,7 @@ function flp_file_path(array $x): string { return flp_files_dir() . '/' . $x['id
 function flp_thumb_path(int $id): string { return flp_thumbs_dir() . '/' . $id . '.jpg'; }
 /* Nom du fichier : date_fournisseur_montant.pdf — un numéro n'est ajouté (-2, -3…) que si une
    autre facture porte exactement le même nom (même jour, même fournisseur, même montant). */
+function flp_cats(string $sens): array { return $sens === 'vente' ? FLP_CATEGORIES_VENTES : ($sens === 'doc' ? FLP_CATEGORIES_DOCS : FLP_CATEGORIES); }
 function flp_nice_base(array $x): string {
   $m = $x['montant'] !== null ? '_' . number_format((float)$x['montant'], 2, ',', '') : '';
   return ($x['date'] ?: 'sans-date') . '_' . flp_slug($x['societe'] ?: 'facture') . $m;
@@ -540,7 +541,7 @@ function flp_backup_full(): ?string {
     if ($x['type'] !== 'piece' || !$x['ext']) continue;
     $p = flp_file_path($x);
     if (!is_file($p)) continue;
-    $dir = ($x['sens'] === 'vente' ? 'emises' : 'recues') . '/' . ($x['year'] ?: 'sans-annee');
+    $dir = ($x['sens'] === 'vente' ? 'emises' : ($x['sens'] === 'doc' ? 'documents' : 'recues')) . '/' . ($x['year'] ?: 'sans-annee');
     $z->addFile($p, 'pieces/' . $dir . '/' . flp_nice_name($x));
     $z->setCompressionName('pieces/' . $dir . '/' . flp_nice_name($x), ZipArchive::CM_STORE);
   }

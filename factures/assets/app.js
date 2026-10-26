@@ -13,14 +13,16 @@
   const ICON_KM = '<svg viewBox="0 0 24 24"><path d="M5 17h14M7 17V9l2-4h6l2 4v8M7 13h10"/><circle cx="8" cy="17" r="2"/><circle cx="16" cy="17" r="2"/></svg>';
 
   let S = {
-    items: [], cfg: { categories: [], categories_ventes: [], bareme: {} }, learn: [], societes: [], dup: new Set(), trash: 0,
+    items: [], cfg: { categories: [], categories_ventes: [], categories_docs: [], bareme: {} }, learn: [], societes: [], dup: new Set(), trash: 0,
     tab: 'achat', q: '', filter: 'all', adv: { cat: '', soc: '', min: '', max: '', from: '', to: '' },
     sort: 'date-desc', view: 'grid', closed: {}, selecting: false, sel: new Set(), bordYear: String(new Date().getFullYear()),
   };
   try { const v = JSON.parse(localStorage.getItem('flp-ui') || '{}'); if (v.view) S.view = v.view; if (v.sort) S.sort = v.sort; } catch (e) {}
   const saveUi = () => { try { localStorage.setItem('flp-ui', JSON.stringify({ view: S.view, sort: S.sort })); } catch (e) {} };
   const byId = id => S.items.find(x => +x.id === +id);
-  const cats = sens => sens === 'vente' ? S.cfg.categories_ventes : S.cfg.categories;
+  const cats = sens => sens === 'vente' ? S.cfg.categories_ventes : sens === 'doc' ? (S.cfg.categories_docs || []) : S.cfg.categories;
+  const isDoc = x => x.sens === 'doc', isAchat = x => x.sens !== 'vente' && x.sens !== 'doc';
+  const sensLabel = x => x.sens === 'vente' ? 'Émise' : x.sens === 'doc' ? 'Document' : 'Reçue';
   const thumbUrl = x => `${API}?a=thumb&id=${x.id}&r=${x.rot || 0}`;
   // adresse « parlante » : le fichier s'ouvre et se télécharge sous son vrai nom (date_fournisseur_montant.pdf)
   const fmt2 = v => v == null || v === '' ? '' : Number(v).toFixed(2).replace('.', ',');   // 68,1 → 68,10
@@ -29,7 +31,7 @@
   const num = v => { const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')); return isNaN(n) ? null : n; };
   const ymd = d => d.toISOString().slice(0, 10);
   // « à vérifier » = pas encore validée par vous (case verte) ; les frais km, saisis à la main, n'en ont pas besoin
-  const todo = x => x.type !== 'km' && !x.verifie;
+  const todo = x => x.type !== 'km' && x.sens !== 'doc' && !x.verifie;
   const dOf = x => x.date || (x.added || '').slice(0, 10);
 
   /* ===================== Chargement ===================== */
@@ -88,7 +90,7 @@
   }
 
   /* ===================== Filtres ===================== */
-  function inTab(x) { return S.tab === 'vente' ? x.sens === 'vente' : x.sens !== 'vente'; }
+  function inTab(x) { return S.tab === 'vente' ? x.sens === 'vente' : S.tab === 'doc' ? isDoc(x) : isAchat(x); }
   function visible() {
     const a = S.adv, min = num(a.min), max = num(a.max);
     let r = S.items.filter(inTab);
@@ -123,11 +125,11 @@
   }
   function advCount() { return Object.values(S.adv).filter(Boolean).length; }
   function fillAdv() {
-    const cs = cats(S.tab === 'vente' ? 'vente' : 'achat');
+    const cs = cats(S.tab === 'vente' ? 'vente' : S.tab === 'doc' ? 'doc' : 'achat');
     $('#fCat').innerHTML = '<option value="">Toutes</option>' + cs.map(c => `<option ${c === S.adv.cat ? 'selected' : ''}>${esc(c)}</option>`).join('');
     const socs = [...new Set(S.items.filter(inTab).map(x => x.societe).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr'));
     $('#fSoc').innerHTML = '<option value="">Tous</option>' + socs.map(c => `<option ${c === S.adv.soc ? 'selected' : ''}>${esc(c)}</option>`).join('');
-    $('#fSocLabel').textContent = S.tab === 'vente' ? 'Client' : 'Fournisseur';
+    $('#fSocLabel').textContent = S.tab === 'vente' ? 'Client' : S.tab === 'doc' ? 'Titre' : 'Fournisseur';
   }
 
   /* ===================== Rendu de la liste ===================== */
@@ -141,7 +143,7 @@
     const list = visible(), app = $('#app');
     if (!list.length) {
       const none = !S.items.some(inTab);
-      app.innerHTML = `<p class="empty">${none ? (S.tab === 'vente' ? 'Aucune facture émise pour l’instant. Importez vos factures de vente avec « Importer », puis basculez-les en « Émise » dans leur fiche.' : 'Aucune facture pour l’instant. Scannez-en une depuis votre téléphone ou importez un fichier.') : 'Aucune facture ne correspond.'}</p>`;
+      app.innerHTML = `<p class="empty">${none ? (S.tab === 'doc' ? 'Aucun document pour l’instant. Contrats, devis, assurances, garanties… : importez-les avec « Importer », ou photographiez-les en choisissant « Document » dans l’appli photo.' : S.tab === 'vente' ? 'Aucune facture émise pour l’instant. Importez vos factures de vente avec « Importer », puis basculez-les en « Émise » dans leur fiche.' : 'Aucune facture pour l’instant. Scannez-en une depuis votre téléphone ou importez un fichier.') : 'Aucune facture ne correspond.'}</p>`;
       return;
     }
     const cls = S.view === 'list' ? 'cards list' : 'cards';
@@ -160,8 +162,8 @@
         const tot = g.reduce((s, x) => s + (x.montant || 0), 0);
         const [y, m] = k.split('-');
         html += `<section class="month${S.closed[k] ? ' closed' : ''}" data-k="${k}">
-          <div class="month-h"><h2>${k === '0000-00' ? 'Sans date' : MOIS[+m] + ' ' + y}</h2><span class="n">${g.length} facture${g.length > 1 ? 's' : ''}</span>
-          <span class="tot">${eur(tot)}</span><svg class="car" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+          <div class="month-h"><h2>${k === '0000-00' ? 'Sans date' : MOIS[+m] + ' ' + y}</h2><span class="n">${g.length} ${S.tab === 'doc' ? 'document' : 'facture'}${g.length > 1 ? 's' : ''}</span>
+          ${S.tab === 'doc' ? '<span class="tot"></span>' : `<span class="tot">${eur(tot)}</span>`}<svg class="car" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
           <div class="${cls}">${g.map(card).join('')}</div></section>`;
       }
       app.innerHTML = html + waitHtml;
@@ -185,9 +187,9 @@
     const dl = x.ext ? `<span class="dl" role="button" tabindex="0" data-share="${x.id}" title="Télécharger cette facture" aria-label="Télécharger ${title}"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span>` : '<span class="dl dl-none"></span>';
     if (S.view === 'list') return `<button class="card${sel}" data-id="${x.id}"><span class="tick"></span>
       <div class="info"><h3>${title}</h3><div class="meta">${frDate(x.date)}${x.categorie ? ' · ' + esc(x.categorie) : ''}</div></div>
-      <div class="right"><div class="mt">${eur(x.montant)}${conv}</div><div class="lbdg">${badges(x)}</div></div>${x.verifie ? '<span class="vdot" title="Vérifiée par vous"></span>' : todo(x) ? '<span class="vdot todo" title="À vérifier"></span>' : '<span class="vdot off"></span>'}${dl}</button>`;
+      <div class="right">${isDoc(x) ? '' : `<div class="mt">${eur(x.montant)}${conv}</div>`}<div class="lbdg">${badges(x)}</div></div>${x.verifie ? '<span class="vdot" title="Vérifiée par vous"></span>' : todo(x) ? '<span class="vdot todo" title="À vérifier"></span>' : '<span class="vdot off"></span>'}${dl}</button>`;
     return `<button class="card${sel}" data-id="${x.id}"><span class="tick"></span>${pic.replace('</div>', `<div class="badges">${badges(x)}</div></div>`)}
-      <div class="info"><h3>${title}${x.verifie ? ' <span class="vdot" title="Vérifiée par vous"></span>' : todo(x) ? ' <span class="vdot todo" title="À vérifier"></span>' : ''}</h3><div class="mt">${eur(x.montant)}${conv}</div><div class="meta">${frDate(x.date)}</div>
+      <div class="info"><h3>${title}${x.verifie ? ' <span class="vdot" title="Vérifiée par vous"></span>' : todo(x) ? ' <span class="vdot todo" title="À vérifier"></span>' : ''}</h3>${isDoc(x) ? '' : `<div class="mt">${eur(x.montant)}${conv}</div>`}<div class="meta">${frDate(x.date)}</div>
       ${x.categorie ? `<span class="cat">${esc(x.categorie)}</span>` : ''}</div>${dl}</button>`;
   }
   function renderStats() {
@@ -199,6 +201,14 @@
     let cmp = '';
     if (before > 0) { const p = Math.round((cur - before) / before * 100); cmp = `<em class="${p > 0 ? (S.tab === 'vente' ? 'down' : 'up') : (S.tab === 'vente' ? 'up' : 'down')}">${p > 0 ? '+' : ''}${p} % vs ${prev} à date</em>`; }
     const nCheck = mine.filter(todo).length;
+    if (S.tab === 'doc') {
+      const last = mine.map(x => (x.added || '').slice(0, 10)).sort().pop();
+      const nc = new Set(mine.map(x => x.categorie).filter(Boolean)).size;
+      $('#stats').innerHTML = `<div class="stat"><b>${mine.length}</b><span>document${mine.length > 1 ? 's' : ''}</span></div>
+        <div class="stat acc"><b>${mine.filter(x => x.year === yr).length}</b><span>en ${yr}</span></div>
+        <div class="stat"><b>${last ? frDate(last).slice(0, 5) : '—'}</b><span>dernier ajout${nc ? ' · ' + nc + ' catégorie' + (nc > 1 ? 's' : '') : ''}</span></div>`;
+      return;
+    }
     $('#stats').innerHTML = `
       <div class="stat"><b>${mine.length}</b><span>facture${mine.length > 1 ? 's' : ''} ${S.tab === 'vente' ? 'émise' + (mine.length > 1 ? 's' : '') : 'reçue' + (mine.length > 1 ? 's' : '')}</span></div>
       <div class="stat acc"><b>${eur(cur)}</b><span>${S.tab === 'vente' ? 'facturé' : 'dépensé'} en ${yr}</span>${cmp}</div>
@@ -214,7 +224,7 @@
     if (nd) h += chip('dup', 'Doublons', nd, 'warn');
     h += chip('all', 'Toutes', mine.length);
     for (const y of years) h += chip(y, y, mine.filter(x => x.year === y).length);
-    if (mine.length) h += chip('unsent', 'Non transmises', ns);
+    if (mine.length && S.tab !== 'doc') h += chip('unsent', 'Non transmises', ns);
     $('#filters').innerHTML = h;
   }
 
@@ -237,34 +247,39 @@
         ${ro ? '' : `<div class="sheet-foot"><button type="button" class="btn btn-del" data-act="trash">Corbeille</button><button type="submit" class="btn btn-acc">Enregistrer</button></div>`}`;
     }
     const cs = cats(x.sens);
-    const vente = x.sens === 'vente';
+    const vente = x.sens === 'vente', doc = x.sens === 'doc';
     return `<input type="hidden" name="id" value="${x.id}">
-      <label class="fld">Type<div class="seg" data-seg="sens"><button type="button" data-v="achat" aria-pressed="${!vente}" ${dis}>Reçue (achat)</button><button type="button" data-v="vente" aria-pressed="${vente}" ${dis}>Émise (vente)</button></div></label>
-      <input type="hidden" name="sens" value="${vente ? 'vente' : 'achat'}">
-      <label class="fld">${vente ? 'Client' : 'Fournisseur'}<input name="societe" list="socList" value="${esc(x.societe)}" class="${d('societe')}" ${dis}></label>
+      <label class="fld">Type<div class="seg seg3" data-seg="sens"><button type="button" data-v="achat" aria-pressed="${!vente && !doc}" ${dis}>Reçue</button><button type="button" data-v="vente" aria-pressed="${vente}" ${dis}>Émise</button><button type="button" data-v="doc" aria-pressed="${doc}" ${dis}>Document</button></div></label>
+      <input type="hidden" name="sens" value="${x.sens === 'vente' || doc ? x.sens : 'achat'}">
+      <label class="fld">${doc ? 'Titre' : vente ? 'Client' : 'Fournisseur'}<input name="societe" list="socList" value="${esc(x.societe)}" class="${d('societe')}" ${dis}></label>
+      <div class="money-only">
       <label class="fld fld-ttc">Montant TTC<div class="amt"><input name="montant" inputmode="decimal" value="${fmt2(x.montant_orig != null ? x.montant_orig : x.montant)}" class="${d('montant')}" ${dis}>
         <select name="devise" class="${d('devise')}" ${dis}>${['EUR', 'USD', 'GBP', 'MUR', 'CHF', 'JPY', 'CAD', 'ZAR'].map(c => `<option ${c === x.devise ? 'selected' : ''}>${c}</option>`).join('')}</select></div></label>
+      </div>
       <label class="fld">Date<input name="date" type="date" value="${esc(x.date)}" class="${d('date')}" ${dis}></label>
-      ${x.montant_orig != null ? `<p class="conv">= ${eur(x.montant)} au taux du ${frDate(x.date)} (1 € = ${x.taux_change} ${esc(x.devise)})</p>` : ''}
+      <div class="money-only">${x.montant_orig != null ? `<p class="conv">= ${eur(x.montant)} au taux du ${frDate(x.date)} (1 € = ${x.taux_change} ${esc(x.devise)})</p>` : ''}
       <div class="row3"><label class="fld">HT<input name="ht" inputmode="decimal" value="${fmt2(x.ht)}" ${dis}></label>
       <label class="fld">TVA<input name="tva" inputmode="decimal" value="${fmt2(x.tva)}" ${dis}></label>
       <label class="fld">Taux %<input name="taux_tva" inputmode="decimal" list="tauxList" value="${x.taux_tva != null ? String(x.taux_tva).replace('.', ',') : ''}" ${dis}></label></div>
-      <datalist id="tauxList"><option value="8,5"><option value="2,1"><option value="0"><option value="20"><option value="10"><option value="5,5"></datalist>
+      <datalist id="tauxList"><option value="8,5"><option value="2,1"><option value="0"><option value="20"><option value="10"><option value="5,5"></datalist></div>
       <label class="fld">Catégorie<select name="categorie" class="${d('categorie')}" ${dis}><option value="">— Catégorie —</option>${cs.map(c => `<option ${c === x.categorie ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
-      <label class="fld">N° de facture<input name="numero" value="${esc(x.numero)}" ${dis}></label>
+      <label class="fld">${doc ? 'Référence' : 'N° de facture'}<input name="numero" value="${esc(x.numero)}" ${dis}></label>
       <label class="fld">Note<textarea name="note" rows="2" ${dis}>${esc(x.note)}</textarea></label>
-      <label class="check"><input type="checkbox" name="transmis" value="1" ${x.transmis ? 'checked' : ''} ${dis}> Transmise au comptable${x.transmis ? ` <span class="muted">(${frDate(x.transmis.slice(0, 10))})</span>` : ''}</label>
-      <label class="verif${x.verifie ? ' on' : ''}"><input type="checkbox" name="verifie" value="1" ${x.verifie ? 'checked' : ''} ${dis}><span class="vbox"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span><b>Vérifiée</b><small>${x.verifie ? `par vous le ${frDate(String(x.verifie).slice(0, 10))}` : 'cochez quand vous avez contrôlé la facture vous-même'}</small></span></label>
+      <div class="money-only"><label class="check"><input type="checkbox" name="transmis" value="1" ${x.transmis ? 'checked' : ''} ${dis}> Transmise au comptable${x.transmis ? ` <span class="muted">(${frDate(x.transmis.slice(0, 10))})</span>` : ''}</label>
+      <label class="verif${x.verifie ? ' on' : ''}"><input type="checkbox" name="verifie" value="1" ${x.verifie ? 'checked' : ''} ${dis}><span class="vbox"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span><b>Vérifiée</b><small>${x.verifie ? `par vous le ${frDate(String(x.verifie).slice(0, 10))}` : 'cochez quand vous avez contrôlé la facture vous-même'}</small></span></label></div>
       ${ro ? '' : `<div class="sheet-foot"><button type="button" class="btn btn-del" data-act="trash">Corbeille</button><button type="submit" class="btn btn-acc">Enregistrer</button></div>`}
       <datalist id="socList">${[...new Set(S.items.filter(y => y.sens === x.sens).map(y => y.societe).filter(Boolean))].map(s => `<option value="${esc(s)}">`).join('')}</datalist>`;
   }
   function bindForm(form, x) {
+    form.classList.toggle('is-doc', x.sens === 'doc');
     form.querySelectorAll('[data-seg] button').forEach(b => b.onclick = () => {
       const v = b.dataset.v; form.sens.value = v;
       b.parentNode.querySelectorAll('button').forEach(o => o.setAttribute('aria-pressed', o === b));
       const sel = form.categorie; const keep = sel.value;
       sel.innerHTML = '<option value="">— Catégorie —</option>' + cats(v).map(c => `<option ${c === keep ? 'selected' : ''}>${esc(c)}</option>`).join('');
-      form.querySelector('[name=societe]').closest('label').firstChild.textContent = v === 'vente' ? 'Client' : 'Fournisseur';
+      form.querySelector('[name=societe]').closest('label').firstChild.textContent = v === 'vente' ? 'Client' : v === 'doc' ? 'Titre' : 'Fournisseur';
+      form.classList.toggle('is-doc', v === 'doc');
+      const num = form.querySelector('[name=numero]'); if (num) num.closest('label').firstChild.textContent = v === 'doc' ? 'Référence' : 'N° de facture';
     });
     // Catégorie apprise pour ce fournisseur
     const soc = form.querySelector('[name=societe]');
@@ -494,7 +509,7 @@
     $('#selCancel').onclick = () => setSelecting(false);
     $('#selAll').onclick = () => { const all = visible(); if (S.sel.size === all.length) S.sel.clear(); else all.forEach(x => S.sel.add(+x.id)); updSel(); render(); };
     $('#selCat').onclick = async () => {
-      const r = await C.formBox({ title: 'Changer la catégorie', ok: 'Appliquer', fields: [{ name: 'c', label: 'Nouvelle catégorie', type: 'select', options: cats(S.tab === 'vente' ? 'vente' : 'achat') }] });
+      const r = await C.formBox({ title: 'Changer la catégorie', ok: 'Appliquer', fields: [{ name: 'c', label: 'Nouvelle catégorie', type: 'select', options: cats(S.tab === 'vente' ? 'vente' : S.tab === 'doc' ? 'doc' : 'achat') }] });
       if (r) bulk('categorie', r.c, '{n} facture(s) mises à jour.');
     };
     $('#selSent').onclick = () => bulk('transmis', '1', '{n} facture(s) marquées « transmises ».');
@@ -545,7 +560,7 @@
       try {
         const prep = await C.prepare(files[i], { learn: S.learn, onStep: s => progress(pre + s, (i + 0.5) / files.length * 100) });
         progress(pre + 'Envoi…', (i + 0.9) / files.length * 100);
-        const r = await C.api('upload', C.uploadForm(prep, { source: 'import', sens: S.tab === 'vente' ? 'vente' : 'achat', ...extra }));
+        const r = await C.api('upload', C.uploadForm(prep, { source: 'import', sens: S.tab === 'vente' ? 'vente' : S.tab === 'doc' ? 'doc' : 'achat', ...extra }));
         ok++; if (r.doublon) dup++;
       } catch (e) { C.toast(`Échec : ${files[i].name} — ${e.message}`, 'err'); }
     }
@@ -679,7 +694,7 @@
         <label class="fld" id="exMon">Mois<input type="month" name="mon" value="${pre.mon || curMon}"></label>
         <label class="fld" id="exYr">Année<select name="yr">${years.map(y => `<option ${y === pre.yr ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
         <div class="row2" id="exDates"><label class="fld">Du<input type="date" name="from" value="${p0.from}"></label><label class="fld">Au<input type="date" name="to" value="${p0.to}"></label></div>
-        <label class="fld">Factures<select name="sens"><option value="">Reçues et émises</option><option value="achat">Reçues seulement</option><option value="vente">Émises seulement</option></select></label>
+        <label class="fld">Factures<select name="sens"><option value="">Reçues et émises</option><option value="achat">Reçues seulement</option><option value="vente">Émises seulement</option><option value="doc">Documents</option></select></label>
         <label class="fld">Format<select name="fmt">
           <option value="zip">ZIP : toutes les pièces renommées + tableau</option><option value="xlsx">Excel (.xlsx)</option>
           <option value="pdf">PDF récapitulatif (totaux par catégorie)</option><option value="csv">CSV</option></select></label>
@@ -719,11 +734,11 @@
     } catch (e) { C.toast(e.message, 'err'); } finally { progress(''); }
   }
   function exportItems(from, to, sens) {
-    return S.items.filter(x => (!sens || (sens === 'vente' ? x.sens === 'vente' : x.sens !== 'vente')) && (!from || dOf(x) >= from) && (!to || dOf(x) <= to))
+    return S.items.filter(x => (sens === 'doc' ? isDoc(x) : !isDoc(x) && (!sens || (sens === 'vente' ? x.sens === 'vente' : isAchat(x)))) && (!from || dOf(x) >= from) && (!to || dOf(x) <= to))
       .sort((a, b) => dOf(a).localeCompare(dOf(b)));
   }
   const rowsOf = list => list.map(x => ({
-    'Sens': x.sens === 'vente' ? 'Émise' : 'Reçue', 'Date': x.date, 'Fournisseur / client': x.societe, 'N°': x.numero, 'Catégorie': x.categorie,
+    'Sens': sensLabel(x), 'Date': x.date, 'Fournisseur / client': x.societe, 'N°': x.numero, 'Catégorie': x.categorie,
     'HT': x.ht, 'TVA': x.tva, 'Taux TVA %': x.taux_tva, 'TTC (EUR)': x.montant, 'Devise': x.devise, 'Montant devise': x.montant_orig,
     'Note': [x.note, x.km ? `${x.km.trajet} (${x.km.distance} km${x.km.ar ? ' A/R' : ''}, ${x.km.cv} CV)` : ''].filter(Boolean).join(' — '),
     'Transmise': x.transmis ? x.transmis.slice(0, 10) : '', 'Fichier': x.filename || '',
@@ -744,7 +759,7 @@
     for (let r = 1; r <= range.e.r; r++) for (const c of [5, 6, 8, 10]) { const a = X.utils.encode_cell({ r, c }); if (ws[a] && typeof ws[a].v === 'number') ws[a].z = '#,##0.00'; }
     ws['!autofilter'] = { ref: ws['!ref'] };
     const byCat = {};
-    for (const x of list) { const k = `${x.sens === 'vente' ? 'Émise' : 'Reçue'} — ${x.categorie || 'Sans catégorie'}`; const o = byCat[k] || (byCat[k] = { 'Catégorie': k, 'Nombre': 0, 'HT': 0, 'TVA': 0, 'TTC (EUR)': 0 }); o['Nombre']++; o['HT'] += x.ht || 0; o['TVA'] += x.tva || 0; o['TTC (EUR)'] += x.montant || 0; }
+    for (const x of list) { const k = `${sensLabel(x)} — ${x.categorie || 'Sans catégorie'}`; const o = byCat[k] || (byCat[k] = { 'Catégorie': k, 'Nombre': 0, 'HT': 0, 'TVA': 0, 'TTC (EUR)': 0 }); o['Nombre']++; o['HT'] += x.ht || 0; o['TVA'] += x.tva || 0; o['TTC (EUR)'] += x.montant || 0; }
     const sum = Object.values(byCat).map(o => ({ ...o, HT: +o.HT.toFixed(2), TVA: +o.TVA.toFixed(2), 'TTC (EUR)': +o['TTC (EUR)'].toFixed(2) }));
     const ws2 = X.utils.json_to_sheet(sum); ws2['!cols'] = [{ wch: 44 }, { wch: 9 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
     const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Factures'); X.utils.book_append_sheet(wb, ws2, 'Totaux par catégorie');
@@ -759,7 +774,7 @@
     doc.text(`Période : ${r.from ? frDate(r.from) : 'début'} au ${r.to ? frDate(r.to) : 'aujourd’hui'} · ${list.length} facture(s) · édité le ${frDate(ymd(new Date()))}`, 14, 25);
     let y = 32;
     for (const sens of ['achat', 'vente']) {
-      const L = list.filter(x => sens === 'vente' ? x.sens === 'vente' : x.sens !== 'vente'); if (!L.length) continue;
+      const L = list.filter(x => sens === 'vente' ? x.sens === 'vente' : isAchat(x)); if (!L.length) continue;
       const g = {}; L.forEach(x => { const k = x.categorie || 'Sans catégorie'; const o = g[k] || (g[k] = [0, 0, 0, 0]); o[0]++; o[1] += x.ht || 0; o[2] += x.tva || 0; o[3] += x.montant || 0; });
       const tot = Object.values(g).reduce((a, o) => [a[0] + o[0], a[1] + o[1], a[2] + o[2], a[3] + o[3]], [0, 0, 0, 0]);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.text(sens === 'vente' ? 'Factures émises — totaux par catégorie' : 'Factures reçues — totaux par catégorie', 14, y);
@@ -770,7 +785,7 @@
     }
     doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.text('Détail', 14, y);
     doc.autoTable({ startY: y + 3, head: [['Date', 'Sens', 'Fournisseur / client', 'Catégorie', 'N°', 'HT', 'TVA', 'TTC']],
-      body: list.map(x => [frDate(x.date), x.sens === 'vente' ? 'Émise' : 'Reçue', x.societe || '', x.categorie || '', x.numero || '', money(x.ht), money(x.tva), money(x.montant)]),
+      body: list.map(x => [frDate(x.date), sensLabel(x), x.societe || '', x.categorie || '', x.numero || '', money(x.ht), money(x.tva), money(x.montant)]),
       theme: 'striped', headStyles: { fillColor: [29, 34, 38] }, styles: { fontSize: 8, cellPadding: 1.6 },
       columnStyles: { 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } } });
     doc.save(`recapitulatif-factures-flp_${label}.pdf`);
@@ -780,7 +795,7 @@
   function renderBord() {
     const Y = S.bordYear, P = String(+Y - 1);
     const years = [...new Set(S.items.map(x => x.year).filter(Boolean).concat([String(new Date().getFullYear())]))].sort().reverse();
-    const ach = S.items.filter(x => x.sens !== 'vente'), ven = S.items.filter(x => x.sens === 'vente');
+    const ach = S.items.filter(isAchat), ven = S.items.filter(x => x.sens === 'vente');
     const sumBy = (arr, y) => { const m = new Array(12).fill(0); arr.forEach(x => { if (x.year === y && x.date) m[+x.date.slice(5, 7) - 1] += x.montant || 0; }); return m; };
     const aY = sumBy(ach, Y), aP = sumBy(ach, P), vY = sumBy(ven, Y);
     const tot = a => a.reduce((s, v) => s + v, 0);

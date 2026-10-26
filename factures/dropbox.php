@@ -50,7 +50,7 @@ function flp_dbx_delete(string $rel): void {
 /* Rangement : Reçues (ou Émises) / 2026 / 01 - Janvier / 2026-01-15_fournisseur_montant_12.pdf */
 function flp_dbx_rel(array $x): string {
   static $mois = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
-  $top = $x['sens'] === 'vente' ? 'Émises' : 'Reçues';
+  $top = $x['sens'] === 'vente' ? 'Émises' : ($x['sens'] === 'doc' ? 'Documents' : 'Reçues');
   if (preg_match('/^(\d{4})-(\d{2})-\d{2}$/', (string)$x['date'], $m)) $dir = $m[1] . '/' . $m[2] . ' - ' . $mois[(int)$m[2]];
   else $dir = ($x['year'] ?: date('Y')) . '/Sans date';
   return $top . '/' . $dir . '/' . flp_nice_name($x);
@@ -117,7 +117,8 @@ function flp_dbx_stream(string $path): void {
 function flp_dbx_wanted(array $x): bool {
   if ($x['type'] !== 'piece' || !$x['ext'] || !empty($x['trashed'])) return false;
   // « vérifiée » = case verte « Vérifiée » cochée par vous dans la fiche
-  return (flp_dbx_cfg()['when'] ?? 'verifie') === 'tout' || !empty($x['verifie']);
+  // les documents (pas des factures) n'ont rien à vérifier : copiés dès l'envoi
+  return (flp_dbx_cfg()['when'] ?? 'verifie') === 'tout' || !empty($x['verifie']) || $x['sens'] === 'doc';
 }
 /* Retire de Dropbox une pièce mise à la corbeille */
 function flp_dbx_unsync(array $x): void {

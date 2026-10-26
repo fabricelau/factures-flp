@@ -76,3 +76,10 @@ body.scan .toasts{bottom:calc(150px + env(safe-area-inset-bottom))}
 #qForm .fld-ttc input{font:800 30px/1.1 var(--dsp);color:var(--acc);text-align:right;padding:12px 14px;border:2px solid color-mix(in srgb,var(--acc) 55%,var(--line));background:color-mix(in srgb,var(--acc) 8%,var(--ink));font-variant-numeric:tabular-nums}
 #qForm .fld-ttc{color:var(--acc)}
 #qForm input[type=date]{-webkit-appearance:none;appearance:none;min-width:0;max-width:100%;text-align:left;min-height:46px}
+
+/* Facture ou document (choisi avant la photo) */
+.kinds{display:flex;justify-content:center;padding:10px 16px 0;background:var(--ink)}
+.kinds .kind{flex:0 1 150px;border:1px solid var(--line);background:var(--ink2);color:var(--mute);padding:9px 14px;font-weight:700;font-size:14px}
+.kinds .kind:first-child{border-radius:40px 0 0 40px}.kinds .kind:last-child{border-radius:0 40px 40px 0;border-left:0}
+.kinds .kind[aria-pressed=true]{background:var(--acc);color:#0d1114;border-color:var(--acc)}
+body.kind-doc #qForm .fld-ttc{display:none}

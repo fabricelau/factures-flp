@@ -317,3 +317,7 @@ body.offline #impBtn{opacity:.4;pointer-events:none}
 .todo-sec .month-h h2{color:var(--acc);display:flex;align-items:center;gap:10px}
 .todo-help{margin:8px 0 2px;font-size:13px;color:var(--mute)}
 .todo-sec.closed .todo-help{display:none}
+
+/* Documents (pas des factures) */
+.is-doc .money-only{display:none}
+@media (max-width:440px){.tabs{gap:2px}.tabs button{padding:9px 10px;font-size:14px}}

@@ -43,6 +43,7 @@ $admin = flp_is_admin();
 <nav class="tabs" id="tabs" role="tablist">
   <button role="tab" data-tab="achat" aria-selected="true">Reçues</button>
   <button role="tab" data-tab="vente" aria-selected="false">Émises</button>
+  <button role="tab" data-tab="doc" aria-selected="false">Documents</button>
   <button role="tab" data-tab="bord" aria-selected="false">Tableau de bord</button>
 </nav>
 

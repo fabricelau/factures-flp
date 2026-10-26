@@ -33,14 +33,14 @@ $find = function (array $items, int $id) { foreach ($items as $x) if ((int)$x['i
 /* Champs communs à l'envoi et à l'enregistrement */
 function flp_apply_fields(array &$x, callable $in, bool $partial): void {
   $has = fn($k) => !$partial || array_key_exists($k, $_POST);
-  if ($has('sens'))      $x['sens'] = $in('sens') === 'vente' ? 'vente' : 'achat';
+  if ($has('sens'))      $x['sens'] = in_array($in('sens'), ['vente', 'doc'], true) ? $in('sens') : 'achat';
   if ($has('societe'))   $x['societe'] = mb_substr($in('societe'), 0, 120);
   if ($has('date'))      $x['date'] = preg_match('/^\d{4}-\d{2}-\d{2}$/', $in('date')) ? $in('date') : '';
   if ($has('numero'))    $x['numero'] = mb_substr($in('numero'), 0, 60);
   if ($has('note'))      $x['note'] = mb_substr($in('note'), 0, 2000);
   if ($has('paiement'))  $x['paiement'] = in_array($in('paiement'), ['CB','Espèces','Virement','Chèque','Prélèvement','PayPal',''], true) ? $in('paiement') : '';
   if ($has('categorie')) {
-    $cats = $x['sens'] === 'vente' ? FLP_CATEGORIES_VENTES : FLP_CATEGORIES;
+    $cats = flp_cats($x['sens']);
     $x['categorie'] = in_array($in('categorie'), $cats, true) ? $in('categorie') : '';
   }
   if ($has('devise'))    $x['devise'] = preg_match('/^[A-Z]{3}$/', $in('devise')) ? $in('devise') : FLP_DEVISE;
@@ -90,7 +90,7 @@ if ($a === 'list') {
     'doublons' => flp_find_duplicates($items),
     'cfg' => [
       'site' => FLP_SITE, 'accent' => FLP_ACCENT, 'base' => flp_base_path(),
-      'categories' => FLP_CATEGORIES, 'categories_ventes' => FLP_CATEGORIES_VENTES,
+      'categories' => FLP_CATEGORIES, 'categories_ventes' => FLP_CATEGORIES_VENTES, 'categories_docs' => FLP_CATEGORIES_DOCS,
       'bareme' => FLP_BAREME_KM, 'keepYears' => FLP_KEEP_YEARS, 'trashDays' => FLP_TRASH_DAYS,
       'dropbox' => $role === 'admin' && !empty($S['dropbox']['refresh']),
       'version' => is_file(__DIR__ . '/VERSION') ? trim((string)file_get_contents(__DIR__ . '/VERSION')) : '',
@@ -116,7 +116,7 @@ if ($a === 'partage') {
 if ($a === 'meta') {
   $learn = flp_learn_public();
   flp_json(['ok' => true, 'role' => $role, 't' => flp_csrf(), 'learn' => $learn,
-    'cfg' => ['categories' => FLP_CATEGORIES, 'categories_ventes' => FLP_CATEGORIES_VENTES]]);
+    'cfg' => ['categories' => FLP_CATEGORIES, 'categories_ventes' => FLP_CATEGORIES_VENTES, 'categories_docs' => FLP_CATEGORIES_DOCS]]);
 }
 
 /* ===================================================================
@@ -172,6 +172,7 @@ if ($a === 'lu') {
                 'categorie' => $x['categorie'] === '', 'montant' => $x['montant'] === null,
                 'ht' => ($x['ht'] ?? null) === null, 'tva' => ($x['tva'] ?? null) === null, 'taux_tva' => ($x['taux_tva'] ?? null) === null];
       $empty['devise'] = $empty['montant'];
+      if ($x['sens'] === 'doc') $empty = ['date' => $x['date'] === ''];    // document : seulement le texte (recherche) et la date
       $saved = $_POST;
       foreach ($empty as $k => $e) if (!$e || !array_key_exists($k, $_POST) || trim((string)$_POST[$k]) === '') unset($_POST[$k]);
       foreach (['sens', 'note', 'paiement'] as $k) unset($_POST[$k]);
@@ -239,7 +240,7 @@ if ($a === 'save') {
   });
   if (!$res) flp_json(['ok' => false, 'msg' => 'Facture introuvable.'], 404);
   flp_json(['ok' => true, 'item' => $res], 200, true);          // réponse tout de suite…
-  if ($res['type'] === 'piece') flp_learn($res['societe'], $res['categorie'], $res['texte'], $res);
+  if ($res['type'] === 'piece' && $res['sens'] !== 'doc') flp_learn($res['societe'], $res['categorie'], $res['texte'], $res);
   // …puis copie dans Dropbox de la facture vérifiée (ou renommage si ses infos ont changé)
   if (is_file(__DIR__ . '/dropbox.php')) { require_once __DIR__ . '/dropbox.php'; flp_dbx_after($res); }
   exit;
@@ -256,11 +257,11 @@ if ($a === 'bulk') {
     $n = 0;
     foreach ($d['items'] as &$x) {
       if (!in_array((int)$x['id'], $ids, true)) continue;
-      if ($op === 'categorie') { $cats = $x['sens'] === 'vente' ? FLP_CATEGORIES_VENTES : FLP_CATEGORIES; if (!in_array($val, $cats, true)) continue; $x['categorie'] = $val; }
+      if ($op === 'categorie') { $cats = flp_cats($x['sens']); if (!in_array($val, $cats, true)) continue; $x['categorie'] = $val; }
       elseif ($op === 'trash')    { $x['trashed'] = true; $x['trashed_at'] = date('c'); }
       elseif ($op === 'transmis') { $x['transmis'] = $val === '1' ? date('c') : ''; }
       elseif ($op === 'check')    { $x['check'] = $val === '1'; if ($val !== '1') $x['verifie'] = $x['verifie'] ?: date('c'); else $x['verifie'] = false; }
-      elseif ($op === 'sens')     { $x['sens'] = $val === 'vente' ? 'vente' : 'achat'; $x['categorie'] = ''; }
+      elseif ($op === 'sens')     { $x['sens'] = in_array($val, ['vente', 'doc'], true) ? $val : 'achat'; $x['categorie'] = ''; }
       else continue;
       $n++;
     }
@@ -374,10 +375,10 @@ if ($a === 'zip') {
   if (!class_exists('ZipArchive')) flp_json(['ok' => false, 'msg' => 'ZIP indisponible sur le serveur.'], 500);
   $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'] ?? '') ? $_GET['from'] : '0000-00-00';
   $to   = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to'] ?? '') ? $_GET['to'] : '9999-12-31';
-  $sens = in_array($_GET['sens'] ?? '', ['achat', 'vente'], true) ? $_GET['sens'] : '';
+  $sens = in_array($_GET['sens'] ?? '', ['achat', 'vente', 'doc'], true) ? $_GET['sens'] : '';
   $items = array_values(array_filter(flp_read()['items'], fn($x) => empty($x['trashed'])
     && ($x['date'] ?: substr($x['added'], 0, 10)) >= $from && ($x['date'] ?: substr($x['added'], 0, 10)) <= $to
-    && ($sens === '' || $x['sens'] === $sens)));
+    && ($sens === '' ? $x['sens'] !== 'doc' : $x['sens'] === $sens)));     // « tout » = les factures (sans les documents)
   usort($items, fn($p, $q) => strcmp($p['date'], $q['date']));
   $zipPath = flp_tmp_dir() . '/export-' . bin2hex(random_bytes(4)) . '.zip';
   $z = new ZipArchive(); $z->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE);
@@ -387,10 +388,10 @@ if ($a === 'zip') {
   foreach ($items as $x) {
     $file = '';
     if ($x['type'] === 'piece' && $x['ext'] && is_file(flp_file_path($x))) {
-      $file = ($x['sens'] === 'vente' ? 'emises/' : 'recues/') . flp_nice_name($x);
+      $file = ($x['sens'] === 'vente' ? 'emises/' : ($x['sens'] === 'doc' ? 'documents/' : 'recues/')) . flp_nice_name($x);
       $z->addFile(flp_file_path($x), $file);
     }
-    $csv .= implode(';', [$q($x['sens'] === 'vente' ? 'Émise' : 'Reçue'), $q($x['date']), $q($x['societe']), $q($x['numero']), $q($x['categorie']),
+    $csv .= implode(';', [$q($x['sens'] === 'vente' ? 'Émise' : ($x['sens'] === 'doc' ? 'Document' : 'Reçue')), $q($x['date']), $q($x['societe']), $q($x['numero']), $q($x['categorie']),
       $q($fr($x['ht'])), $q($fr($x['tva'])), $q($x['taux_tva'] === null ? '' : $fr($x['taux_tva']) . ' %'), $q($fr($x['montant'])),
       $q($x['devise']), $q($fr($x['montant_orig'])), $q($x['paiement']), $q(str_replace(["\r", "\n"], ' ', $x['note'] . ($x['km'] ? ' — ' . $x['km']['trajet'] . ' (' . $x['km']['distance'] . ' km' . ($x['km']['ar'] ? ' A/R' : '') . ', ' . $x['km']['cv'] . ' CV)' : ''))), $q($file)]) . "\r\n";
   }

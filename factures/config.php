@@ -76,6 +76,20 @@ const FLP_CATEGORIES_VENTES = [
   'Autre prestation',
 ];
 
+/* Catégories des DOCUMENTS (pas des factures) */
+const FLP_CATEGORIES_DOCS = [
+  'Contrat',
+  'Devis',
+  'Bon de commande / livraison',
+  'Assurance',
+  'Banque',
+  'Impôts & URSSAF',
+  'Administratif',
+  'Garantie & notice',
+  'Autorisation / droit à l’image',
+  'Autre document',
+];
+
 /* Barème kilométrique (voitures) — à vérifier chaque année sur impots.gouv.fr.
    Pour chaque puissance fiscale : [jusqu'à 5 000 km : d × a],
    [5 001 à 20 000 km : d × b + c], [au-delà de 20 000 km : d × e]. */

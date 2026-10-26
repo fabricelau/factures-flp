@@ -14,6 +14,16 @@
   let pages = [];          // pages validées : { canvas }
   let edit = null;         // page en cours de réglage : { src, pts, deg }
   let meta = { learn: [], cfg: { categories: [] } };
+  // Facture ou simple document : choisi avant la photo (gardé pendant la session)
+  let kind = 'facture';
+  try { kind = sessionStorage.getItem('flp-kind') === 'doc' ? 'doc' : 'facture'; } catch (e) {}
+  const isDocKind = () => kind === 'doc';
+  function setKind(k) {
+    kind = k; try { sessionStorage.setItem('flp-kind', k); } catch (e) {}
+    document.querySelectorAll('#kinds [data-k]').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === k));
+    document.body.classList.toggle('kind-doc', k === 'doc');
+    if (typeof setHint === 'function') setHint();
+  }
   let useFilter = true;
   try { useFilter = localStorage.getItem('flp-filter') !== '0'; } catch (e) {}
 
@@ -21,7 +31,7 @@
   function show(v) {
     views.forEach(id => $('#' + id).hidden = id !== v);
     const cam = v === 'camView';
-    $('#modes').hidden = !cam; $('#controls').hidden = !cam;
+    $('#modes').hidden = !cam; $('#controls').hidden = !cam; $('#kinds').hidden = !cam;
     if (cam) startCam(); else stopCam();
   }
   function busy(txt) { $('#busy').hidden = !txt; if (txt) $('#busyTxt').textContent = txt; }
@@ -79,6 +89,8 @@
     $('#torch').classList.toggle('on', torchOn);
   };
 
+  $('#kinds').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) setKind(b.dataset.k); });
+
   /* ---------- Modes ---------- */
   $('#modes').addEventListener('click', e => {
     const b = e.target.closest('[data-m]'); if (!b) return;
@@ -90,7 +102,7 @@
   function setHint() {
     $('#hint').textContent = mode === 'long' ? 'Ticket long : photographiez-le en plusieurs morceaux, de haut en bas'
       : mode === 'multi' ? 'Plusieurs pages : une photo par page, puis « Envoyer »'
-      : 'Cadrez la facture, posée à plat';
+      : isDocKind() ? 'Document : cadrez la page, posée à plat' : 'Cadrez la facture, posée à plat';
   }
   function pageCount() { const n = pages.length; $('#pageCount').hidden = !n; $('#pageCount').textContent = n + (mode === 'long' ? ' morceau' : ' page') + (n > 1 ? 's' : ''); }
 
@@ -272,13 +284,13 @@
       // en 1 à 2 secondes. La lecture se fait ensuite, en arrière-plan, et remplit les champs.
       const ocrSrc = ocrCanvas(first);
       const vh = await C.vhash(first);     // empreinte du logo / de l'en-tête
-      const rec = { file: await pack(file), thumb: thumb ? await pack(thumb) : null, pages: nb, text: '', guess: null, vh, ts: Date.now() };
+      const rec = { file: await pack(file), thumb: thumb ? await pack(thumb) : null, pages: nb, text: '', guess: null, vh, sens: isDocKind() ? 'doc' : 'achat', ts: Date.now() };
       pages = []; pageCount();
       busy('Envoi…');
       await Outbox.add(rec);
       const sent = await flush(true);
       busy('');
-      if (sent && sent.item) { openQuick(sent.item, thumb, sent.doublon); readLater(sent.item.id, ocrSrc, true, vh); }
+      if (sent && sent.item) { quickKind[sent.item.id] = sent.item.sens === 'doc' ? 'doc' : 'facture'; openQuick(sent.item, thumb, sent.doublon); readLater(sent.item.id, ocrSrc, true, vh); }
       else { C.toast(navigator.onLine ? 'Envoi en attente, nouvel essai bientôt.' : 'Hors-ligne : la facture partira au retour du réseau.', 'ok'); show('camView'); }
     } catch (e) { busy(''); C.toast(e.message || 'Échec.', 'err'); show('camView'); }
   }
@@ -292,13 +304,16 @@
     return c;
   }
   /* Lecture en arrière-plan, puis envoi de ce qui a été lu (seuls les champs vides sont remplis) */
+  const quickKind = {};
   async function readLater(id, img, live, vh) {
     try {
-      if (live) $('#qSub').textContent = 'Lecture de la facture…';
-      const text = await C.ocr(img, p => { if (live && quickId === id) $('#qSub').textContent = 'Lecture de la facture… ' + Math.round(p * 100) + ' %'; });
-      const g = text || vh ? window.FLPExtract.extract(text, meta.learn, { vh }) : null;
+      const what = quickKind[id] === 'doc' ? 'du document' : 'de la facture';
+      if (live) $('#qSub').textContent = 'Lecture ' + what + '…';
+      const text = await C.ocr(img, p => { if (live && quickId === id) $('#qSub').textContent = 'Lecture ' + what + '… ' + Math.round(p * 100) + ' %'; });
+      const doc = quickKind[id] === 'doc';
+      const g = doc ? (text ? { date: window.FLPExtract.findDate(text).value, doutes: [] } : null) : (text || vh ? window.FLPExtract.extract(text, meta.learn, { vh }) : null);
       const fd = new FormData(); fd.set('id', id); fd.set('texte', text.slice(0, 20000));
-      if (g) for (const k of ['societe', 'date', 'montant', 'categorie', 'numero', 'devise', 'ht', 'tva', 'taux_tva'])
+      if (g) for (const k of doc ? ['date'] : ['societe', 'date', 'montant', 'categorie', 'numero', 'devise', 'ht', 'tva', 'taux_tva'])
         if (g[k] !== undefined && g[k] !== null && g[k] !== '') fd.set(k, g[k]);
       fd.set('doutes', g ? (g.doutes || []).join(',') : 'lecture');
       const res = await C.api('lu', fd, { quiet: true });
@@ -331,14 +346,15 @@
         try {
           const prep = { file: unpack(rec.file), thumb: rec.thumb ? unpack(rec.thumb) : null, text: rec.text, pages: rec.pages, guess: rec.guess, vh: rec.vh || '' };
           if (!prep.file || !prep.file.size) { await Outbox.remove(rec.id); C.toast('Une photo était illisible sur le téléphone, merci de la reprendre.', 'err'); continue; }
-          const res = await C.api('upload', C.uploadForm(prep, { source: 'scan' }));
+          const res = await C.api('upload', C.uploadForm(prep, { source: 'scan', sens: rec.sens || 'achat' }));
           await Outbox.remove(rec.id);
           last = res;
+          if (res.item) quickKind[res.item.id] = rec.sens === 'doc' ? 'doc' : 'facture';
           if (!wantLast && !rec.text && res.item && prep.file.type === 'application/pdf')
             C.readPdf(prep.file).then(r => readLater(res.item.id, ocrCanvas(r.canvas), false, rec.vh)).catch(() => {});
           else if (!wantLast && !rec.text && res.item && prep.file.type.startsWith('image/'))
             C.loadImage(prep.file).then(im => { const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight; c.getContext('2d').drawImage(im, 0, 0); readLater(res.item.id, ocrCanvas(c), false, rec.vh); }).catch(() => {});
-          if (!wantLast) C.toast('Facture envoyée ✓', 'ok');
+          if (!wantLast) C.toast(rec.sens === 'doc' ? 'Document envoyé ✓' : 'Facture envoyée ✓', 'ok');
         } catch (e) {
           if (e.message === 'auth') return null;
           if (e.status === 419) { const j = await C.api('meta', null, { quiet: true }).catch(() => null); if (j && j.t) C.setToken(j.t); break; }
@@ -379,12 +395,15 @@
     f.dataset.devise = item.devise || 'EUR';
     $('#qCur').textContent = item.devise && item.devise !== 'EUR' ? item.devise : '';
     f.date.value = item.date || '';
-    $('#qCat').innerHTML = '<option value="">— Catégorie —</option>' + meta.cfg.categories.map(c => `<option ${c === item.categorie ? 'selected' : ''}>${C.esc(c)}</option>`).join('');
+    const docK = item.sens === 'doc';
+    document.body.classList.toggle('kind-doc', docK);
+    $('#qSocLbl').textContent = docK ? 'Titre du document' : 'Fournisseur';
+    $('#qCat').innerHTML = '<option value="">— Catégorie —</option>' + ((docK ? meta.cfg.categories_docs : meta.cfg.categories) || []).map(c => `<option ${c === item.categorie ? 'selected' : ''}>${C.esc(c)}</option>`).join('');
     $('#qSocs').innerHTML = meta.learn.map(l => `<option value="${C.esc(l.n)}">`).join('');
     $('#qThumb').src = thumb ? URL.createObjectURL(thumb) : '';
-    $('#qTitle').textContent = doublon ? 'Envoyée — doublon possible' : 'Facture envoyée ✓';
-    $('#qSub').textContent = doublon ? 'Une facture identique existe déjà. Vérifiez dans la liste.' : 'Vérifiez ce qui a été lu, puis validez.';
-    for (const k of ['societe', 'montant', 'date', 'categorie']) f[k].classList.toggle('doubt', (item.doutes || []).includes(k) || !f[k].value);
+    $('#qTitle').textContent = doublon ? 'Envoyé — doublon possible' : docK ? 'Document envoyé ✓' : 'Facture envoyée ✓';
+    $('#qSub').textContent = doublon ? 'Un fichier identique existe déjà. Vérifiez dans la liste.' : docK ? 'Donnez-lui un titre et une catégorie, puis validez.' : 'Vérifiez ce qui a été lu, puis validez.';
+    for (const k of docK ? ['societe', 'categorie'] : ['societe', 'montant', 'date', 'categorie']) f[k].classList.toggle('doubt', (item.doutes || []).includes(k) || !f[k].value);
     show('quickView');
   }
   $('#qForm').addEventListener('input', e => { e.target.dataset.touched = '1'; e.target.classList.remove('doubt'); });
@@ -403,13 +422,15 @@
     e.preventDefault();
     const f = e.target;
     try {
-      await C.api('save', { id: f.id.value, societe: f.societe.value, montant: f.montant.value, devise: f.dataset.devise || 'EUR', date: f.date.value, categorie: f.categorie.value });
-      if (f.societe.value && !meta.learn.some(l => l.n === f.societe.value)) meta.learn.push({ n: f.societe.value, cat: f.categorie.value, w: [] });
-      C.toast('Facture validée ✓', 'ok');
+      const docK = quickKind[+f.id.value] === 'doc';
+      await C.api('save', docK ? { id: f.id.value, sens: 'doc', societe: f.societe.value, date: f.date.value, categorie: f.categorie.value }
+        : { id: f.id.value, societe: f.societe.value, montant: f.montant.value, devise: f.dataset.devise || 'EUR', date: f.date.value, categorie: f.categorie.value });
+      if (!docK && f.societe.value && !meta.learn.some(l => l.n === f.societe.value)) meta.learn.push({ n: f.societe.value, cat: f.categorie.value, w: [] });
+      C.toast(docK ? 'Document enregistré ✓' : 'Facture validée ✓', 'ok');
     } catch (err) { C.toast(err.message, 'err'); }
-    quickId = null; show('camView');
+    quickId = null; setKind(kind); show('camView');
   });
-  $('#qLater').onclick = () => { quickId = null; C.toast('Elle vous attend dans « À vérifier ».'); show('camView'); };
+  $('#qLater').onclick = () => { quickId = null; setKind(kind); C.toast('Elle vous attend dans « À vérifier ».'); show('camView'); };
 
   /* ---------- Photos ou PDF existants ---------- */
   $('#pick').addEventListener('change', async e => {
@@ -457,6 +478,7 @@
   C.api('meta', null, { quiet: true }).then(j => { if (j.ok) { meta = j; C.setToken(j.t); } }).catch(() => {});
   // préchauffe le moteur de lecture pendant que l'on cadre la photo
   setTimeout(() => { if (navigator.onLine) C.ocrWarm().catch(() => {}); }, 1200);
+  setKind(kind);
   show('camView');
   updateQueue(); flush();
 })();

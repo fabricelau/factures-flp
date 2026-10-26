@@ -79,7 +79,7 @@ if(sa&&!sessionStorage.getItem('flp-lance')&&!document.referrer){sessionStorage.
     <div class="quick-head"><img id="qThumb" alt=""><div><b id="qTitle">Facture envoyée</b><small id="qSub">Vérifiez et validez</small></div></div>
     <form id="qForm" autocomplete="off">
       <input type="hidden" name="id">
-      <label class="fld">Fournisseur<input name="societe" list="qSocs"></label>
+      <label class="fld"><span id="qSocLbl">Fournisseur</span><input name="societe" list="qSocs"></label>
       <datalist id="qSocs"></datalist>
       <label class="fld fld-ttc">Montant TTC <span id="qCur" class="muted"></span><input name="montant" inputmode="decimal"></label>
       <label class="fld">Date<input name="date" type="date"></label>
@@ -94,6 +94,10 @@ if(sa&&!sessionStorage.getItem('flp-lance')&&!document.referrer){sessionStorage.
 
 <div class="busy" id="busy" hidden><div class="spin"></div><p id="busyTxt">Traitement…</p></div>
 
+<nav class="kinds" id="kinds" aria-label="Type de document">
+  <button class="kind" data-k="facture" aria-pressed="true">Facture</button>
+  <button class="kind" data-k="doc" aria-pressed="false">Document</button>
+</nav>
 <nav class="modes" id="modes">
   <button class="mode" data-m="1" aria-pressed="true">1 page</button>
   <button class="mode" data-m="multi" aria-pressed="false">Plusieurs pages</button>
