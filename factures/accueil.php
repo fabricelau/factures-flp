@@ -28,13 +28,8 @@ $base = flp_base_path();
   .l-head img{width:44px;height:44px;border-radius:10px}
   .l-head b{display:block;font:800 22px/1 var(--dsp);text-transform:uppercase;letter-spacing:.02em}
   .l-head small{color:var(--mute);font:600 11px/1.4 var(--mono);letter-spacing:.14em;text-transform:uppercase}
-  .l-choices{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1.25fr 1fr;gap:14px}
-  .l-photo{grid-column:1 / -1}
-  .l-btn.half{padding:16px 14px}
-  .l-btn.half svg{top:18px;left:18px;width:38px;height:38px}
-  .l-btn.half b{font-size:clamp(17px,4.7vw,34px);letter-spacing:0;white-space:nowrap}
-  .l-btn.half span{font-size:13.5px}
-  .l-btn.half em{top:auto;bottom:calc(100% - 64px);right:12px;font-size:11px}
+  .l-choices{flex:1;display:grid;grid-template-rows:1fr 1fr 1fr;gap:12px}
+  .l-btn.half em{top:22px;right:22px}
   .l-bill svg{color:var(--acc)}
   .l-btn{position:relative;display:flex;flex-direction:column;justify-content:flex-end;gap:6px;padding:22px;border-radius:22px;
     text-decoration:none;color:var(--bone);background:var(--ink2);border:1px solid var(--line);overflow:hidden;
@@ -46,7 +41,7 @@ $base = flp_base_path();
   .l-btn em{position:absolute;top:22px;right:22px;font:700 12px/1 var(--mono);background:var(--acc);color:var(--acc-ink);padding:6px 9px;border-radius:999px;font-style:normal}
   .l-photo{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}
   .l-photo span{color:color-mix(in srgb,var(--acc-ink) 70%,transparent)}
-  @media (min-width:700px){.l-choices{grid-template-rows:none;grid-template-columns:1.3fr 1fr 1fr;max-height:420px}.l-photo{grid-column:auto}}
+  @media (min-width:700px){.l-choices{grid-template-rows:none;grid-template-columns:1fr 1fr 1fr;max-height:420px}}
 </style>
 </head>
 <body class="launch">
