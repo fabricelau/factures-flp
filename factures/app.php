@@ -137,7 +137,8 @@ $admin = flp_is_admin();
 <div class="menu" id="menu" hidden>
   <div class="menu-bg" data-mclose></div>
   <div class="menu-box">
-    <?php if ($admin): ?><button class="menu-i" data-m="km"><svg viewBox="0 0 24 24"><path d="M5 17h14M7 17V9l2-4h6l2 4v8M7 13h10"/><circle cx="8" cy="17" r="2"/><circle cx="16" cy="17" r="2"/></svg>Frais kilométriques</button><?php endif; ?>
+    <?php if ($admin): ?><a class="menu-i" href="/facturation/"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>Facturation (devis, factures)</a>
+    <button class="menu-i" data-m="km"><svg viewBox="0 0 24 24"><path d="M5 17h14M7 17V9l2-4h6l2 4v8M7 13h10"/><circle cx="8" cy="17" r="2"/><circle cx="16" cy="17" r="2"/></svg>Frais kilométriques</button><?php endif; ?>
     <button class="menu-i" data-m="export"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Exporter pour le comptable</button>
     <?php if ($admin): ?><button class="menu-i" data-m="trash"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/></svg>Corbeille <em id="trashN"></em></button>
     <button class="menu-i" data-m="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.6 14H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.1-2.7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9.7 3.6V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>Réglages<em id="updDot"></em></button><?php endif; ?>
