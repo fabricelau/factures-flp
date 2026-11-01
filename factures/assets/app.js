@@ -1014,7 +1014,8 @@
   async function renderBank() {
     const V = $('#bankView');
     if (S.bank === null) { V.innerHTML = '<div class="loading">Chargement des relevés…</div>'; await loadBank(); }
-    const st = S.items.filter(isBank).sort((a, b) => (a.bq?.du || a.date || '').localeCompare(b.bq?.du || b.date || ''));
+    const st = S.items.filter(isBank).sort((a, b) => (a.date || a.bq?.au || '').localeCompare(b.date || b.bq?.au || ''));
+    if (ADMIN && !bankFixing && st.some(x => x.ext && (!x.bq || x.bq.v !== 2))) setTimeout(fixOldStatements, 300);
     const years = [...new Set([...S.bank.map(t => t.d.slice(0, 4)), ...st.map(x => (x.date || '').slice(0, 4)).filter(Boolean)])].sort().reverse();
     if (!S.bankYear || !years.includes(S.bankYear)) S.bankYear = years[0] || String(new Date().getFullYear());
     const Y = S.bankYear, txY = S.bank.filter(t => t.d.startsWith(Y));
@@ -1052,7 +1053,7 @@
       </div>` : ''}
       <h3 class="bk-h">Relevés ${Y} <small>${stY.length}</small></h3>
       <div class="bk-st">${stY.length ? stY.map(x => { const q = x.bq || {}; return `<button class="bk-stc" data-id="${x.id}" type="button">
-          <b>${esc(x.societe || 'Relevé')}</b><span>${q.du ? frDate(q.du) + ' → ' + frDate(q.au) : frDate(x.date)} · ${q.n ?? 0} opération${(q.n ?? 0) > 1 ? 's' : ''}${q.doublons ? ` (${q.doublons} déjà lue${q.doublons > 1 ? 's' : ''})` : ''}</span>
+          <b>${esc(x.societe || 'Relevé')}</b><span>${q.releve_au ? 'Relevé au ' + frDate(q.releve_au) : q.du ? frDate(q.du) + ' → ' + frDate(q.au) : frDate(x.date)} · ${q.n ?? 0} opération${(q.n ?? 0) > 1 ? 's' : ''}${q.doublons ? ` (${q.doublons} déjà lue${q.doublons > 1 ? 's' : ''})` : ''}</span>
           <em class="${q.verif === 'ok' ? 'ok' : q.verif === 'ecart' ? 'ko' : ''}">${q.verif === 'ok' ? '✓ soldes vérifiés' : q.verif === 'ecart' ? '⚠ écart avec le solde' : q.n ? '' : '⚠ rien lu'}</em>
           ${x.ext ? `<span class="dl" role="button" tabindex="0" data-share="${x.id}" aria-label="Télécharger"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span>` : ''}</button>`; }).join('') : `<p class="empty" style="padding:14px 0">${st.length ? 'Aucun relevé sur cette année.' : 'Aucun relevé pour l’instant. Importez le PDF de votre relevé (ou l’export CSV / OFX depuis le site de votre banque) : l’appli lit les opérations, les classe par date et calcule vos entrées et dépenses.'}</p>`}</div>
       ${txY.length ? `<h3 class="bk-h">Opérations</h3>
@@ -1100,14 +1101,33 @@
     progress('');
     if (!res.length) return;
     await load(); await loadBank();
-    const y = res[res.length - 1].meta.au || res[res.length - 1].meta.du; if (y) S.bankYear = y.slice(0, 4);
+    const y = res[res.length - 1].meta.releveAu || res[res.length - 1].meta.au || res[res.length - 1].meta.du; if (y) S.bankYear = y.slice(0, 4);
     render();
     C.dialog({ title: res.length > 1 ? `${res.length} relevés importés` : 'Relevé importé', html: res.map(r => r.deja ? `<div class="box"><b>${esc(r.titre || r.name)}</b><br>Ce relevé était déjà importé : rien n’a été ajouté.</div>` : `<div class="box"><b>${esc(r.titre || r.name)}</b><br>
-      ${r.meta.du ? `Du ${frDate(r.meta.du)} au ${frDate(r.meta.au)}<br>` : ''}
+      ${r.meta.releveAu ? `Relevé au ${frDate(r.meta.releveAu)}<br>` : r.meta.du ? `Du ${frDate(r.meta.du)} au ${frDate(r.meta.au)}<br>` : ''}
       ${r.meta.n} opération${r.meta.n > 1 ? 's' : ''} lue${r.meta.n > 1 ? 's' : ''}${r.doublons ? ` · ${r.doublons} déjà présente${r.doublons > 1 ? 's' : ''} (relevé précédent)` : ''}<br>
       <span class="pos">Entrées +${eur(r.meta.entrees)}</span> · <span class="neg">Dépenses −${eur(r.meta.sorties)}</span><br>
       ${r.meta.verif === 'ok' ? '<span class="ok-txt">✓ Contrôle réussi : ancien solde + entrées − dépenses = nouveau solde.</span>' : r.meta.verif === 'ecart' ? '<span class="neg">⚠ Les opérations lues ne collent pas exactement au solde du relevé : vérifiez s’il manque une ligne.</span>' : '<span class="muted">Pas de solde indiqué sur le relevé : contrôle impossible.</span>'}
       ${r.meta.devine ? '<br><span class="muted">Le relevé n’a pas de colonnes Débit / Crédit séparées : le sens de quelques opérations a été deviné d’après leur libellé.</span>' : ''}</div>`).join('') });
+  }
+  /* Relevés importés avant la lecture de « Relevé au … » : relus une fois pour remettre la bonne date */
+  let bankFixing = false;
+  async function fixOldStatements() {
+    if (bankFixing) return; bankFixing = true;
+    const old = S.items.filter(x => isBank(x) && x.ext && (!x.bq || x.bq.v !== 2));
+    let n = 0;
+    try {
+      for (const x of old) {
+        progress(`Remise à la bonne date des relevés… ${n + 1}/${old.length}`, (n + 0.5) / old.length * 100);
+        try {
+          const blob = await fetch(fileUrl(x), { credentials: 'same-origin' }).then(r => { if (!r.ok) throw new Error(); return r.blob(); });
+          const f = new File([blob], fileName(x), { type: x.ext === 'pdf' ? 'application/pdf' : 'text/plain' });
+          const r = await window.FLPBank.parse(f);
+          if (r.tx.length) { await C.api('bank_save', { id: x.id, tx: JSON.stringify(r.tx), meta: JSON.stringify(r.meta) }); n++; }
+        } catch (e) { /* fichier illisible : on le laisse tel quel */ }
+      }
+    } finally { progress(''); }
+    if (n) { await load(); C.toast(`${n} relevé${n > 1 ? 's' : ''} remis à la date « Relevé au … ».`, 'ok'); }
   }
   async function exportBank() {
     const Y = S.bankYear, tx = (S.bank || []).filter(t => t.d.startsWith(Y)), match = matchBank(tx);

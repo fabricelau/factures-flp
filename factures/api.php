@@ -547,7 +547,9 @@ if ($a === 'bank_save') {
     }
   }
   $num = fn($v) => is_numeric($v) ? round((float)$v, 2) : null;
-  $q = ['du' => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($meta['du'] ?? '')) ? $meta['du'] : '', 'au' => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($meta['au'] ?? '')) ? $meta['au'] : '',
+  $okd = fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) ? (string)$v : '';
+  $ra = $okd($meta['releveAu'] ?? '');            // « Relevé au 31/10/2026 » : date du relevé
+  $q = ['du' => $okd($meta['du'] ?? ''), 'au' => $ra ?: $okd($meta['au'] ?? ''), 'releve_au' => $ra, 'v' => 2,
         'banque' => mb_substr((string)($meta['banque'] ?? ''), 0, 60), 'ancien' => $num($meta['ancien'] ?? null), 'nouveau' => $num($meta['nouveau'] ?? null),
         'verif' => in_array($meta['verif'] ?? '', ['ok', 'ecart'], true) ? $meta['verif'] : '', 'entrees' => $num($meta['entrees'] ?? 0), 'sorties' => $num($meta['sorties'] ?? 0),
         'n' => count($tx), 'ajout' => $added, 'doublons' => $dup, 'devine' => !empty($meta['devine'])];
@@ -556,7 +558,7 @@ if ($a === 'bank_save') {
       $x['bq'] = $q; $x['categorie'] = 'Relevé bancaire'; $x['check'] = false; $x['montant'] = null;
       if ($q['au'] || $q['du']) { $x['date'] = $q['au'] ?: $q['du']; $x['year'] = substr($x['date'], 0, 4); }
       $mois = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
-      $ref = $q['du'] ?: $x['date'];
+      $ref = $q['releve_au'] ?: ($q['au'] ?: ($q['du'] ?: $x['date']));     // le mois du relevé = celui de « Relevé au »
       if ($x['societe'] === '' || strpos($x['societe'], 'Relevé') === 0) $x['societe'] = 'Relevé ' . ($q['banque'] ? $q['banque'] . ' ' : '') . ($ref ? $mois[(int)substr($ref, 5, 2)] . ' ' . substr($ref, 0, 4) : '');
       $x['filename'] = flp_nice_name($x, $dd['items']);
       return $x;

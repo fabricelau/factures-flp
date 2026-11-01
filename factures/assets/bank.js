@@ -35,8 +35,26 @@
   const BANKS = ['BRED', 'Crédit Agricole', 'La Banque Postale', 'Banque Postale', 'BNP Paribas', 'Société Générale', 'LCL', 'Caisse d’Epargne', "Caisse d'Epargne", 'Banque Populaire', 'CIC', 'Crédit Mutuel', 'Boursorama', 'BoursoBank', 'Qonto', 'Shine', 'Revolut', 'N26', 'Banque de la Réunion', 'BFC Océan Indien', 'Hello bank', 'Fortuneo', 'Monabanq', 'Crédit Coopératif', 'Mynd'];
   function bankName(text) { const t = low(text); for (const b of BANKS) if (t.includes(low(b))) return b.replace('’', "'"); return ''; }
   /* période « du 01/10/2026 au 31/10/2026 », date d'arrêté… */
+  const MOIS_N = { janvier: 1, fevrier: 2, mars: 3, avril: 4, mai: 5, juin: 6, juillet: 7, aout: 8, septembre: 9, octobre: 10, novembre: 11, decembre: 12 };
+  /* « Relevé au 31/10/2026 » (en haut à droite du relevé) : c'est LA date du relevé */
+  function releveAu(t) {
+    const Y = y => (+y < 100 ? 2000 + +y : +y);
+    let m = t.match(/relev[e]?[^\n]{0,40}?\bau\s+(\d{1,2})\s*[\/.\-]\s*(\d{1,2})\s*[\/.\-]\s*(\d{2,4})/);
+    if (m) return iso(Y(m[3]), +m[2], +m[1]);
+    m = t.match(/relev[e]?[^\n]{0,40}?\bau\s+(\d{1,2})(?:er)?\s+(janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre)\s+(\d{4})/);
+    if (m) return iso(+m[3], MOIS_N[m[2]], +m[1]);
+    return '';
+  }
   function period(text) {
     const t = low(text);
+    const ra = releveAu(t);
+    if (ra) {
+      const p = periodBase(t);
+      return Object.assign(p, { releveAu: ra, au: ra, year: +ra.slice(0, 4), endMonth: +ra.slice(5, 7) });
+    }
+    return periodBase(t);
+  }
+  function periodBase(t) {
     let m = t.match(/du\s+(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4})\s+au\s+(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4})/);
     const Y = y => (+y < 100 ? 2000 + +y : +y);
     if (m) return { du: iso(Y(m[3]), +m[2], +m[1]), au: iso(Y(m[6]), +m[5], +m[4]), year: Y(m[6]), endMonth: +m[5] };
@@ -111,7 +129,7 @@
   }
   function parseLines(lines, text) {
     const ctx = period(text);
-    const meta = { banque: bankName(text), du: ctx.du || '', au: ctx.au || '' };
+    const meta = { banque: bankName(text), du: ctx.du || '', au: ctx.au || '', releveAu: ctx.releveAu || '' };
     let cols = null;     // { deb: x, cre: x } ou { mt: x }
     const tx = [];
     let last = null, labelX = null;
