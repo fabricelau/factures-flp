@@ -73,6 +73,7 @@ const FLP_CATEGORIES_VENTES = [
   'Mariage',
   'Montage & post-production',
   'Drone',
+  'Spectacle',
   'Autre prestation',
 ];
 
