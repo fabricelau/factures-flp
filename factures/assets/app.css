@@ -321,3 +321,18 @@ body.offline #impBtn{opacity:.4;pointer-events:none}
 /* Documents (pas des factures) */
 .is-doc .money-only{display:none}
 @media (max-width:440px){.tabs{gap:2px}.tabs button{padding:9px 10px;font-size:14px}}
+
+/* Réglages : catégories */
+.catbox .cat-tabs{margin:0 0 8px}
+.cat-list{list-style:none;margin:0;padding:0;max-height:320px;overflow-y:auto;border:1px solid var(--line);border-radius:9px}
+.cat-list li{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.cat-list li:last-child{border-bottom:0}
+.cat-list .cn{flex:1;min-width:0;font-size:14.5px;line-height:1.25}
+.cat-list small{flex:none;color:var(--mute);font-size:11.5px}
+.cat-list select{flex:none;width:34px;height:30px;margin:0;padding:0;font-size:14px;text-align:center;text-align-last:center;-webkit-appearance:none;appearance:none;background:var(--ink2);color:var(--bone);border:1px solid var(--line);border-radius:7px}
+.cat-list button{flex:none;border:1px solid var(--line);background:var(--ink2);color:var(--bone);border-radius:7px;width:30px;height:30px;font-size:14px}
+.cat-list .cat-del{color:#ff8a7a}
+.cat-list button:disabled{opacity:.35}
+.cat-add{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.cat-add input{flex:1;min-width:140px;background:var(--ink2);border:1px solid var(--line);color:var(--bone);border-radius:8px;padding:9px 11px;font-size:15px}
+.cat-add select{background:var(--ink2);border:1px solid var(--line);color:var(--bone);border-radius:8px;padding:8px}

@@ -41,6 +41,8 @@ function flp_apply_fields(array &$x, callable $in, bool $partial): void {
   if ($has('paiement'))  $x['paiement'] = in_array($in('paiement'), ['CB','Espèces','Virement','Chèque','Prélèvement','PayPal',''], true) ? $in('paiement') : '';
   if ($has('categorie')) {
     $cats = flp_cats($x['sens']);
+    // une catégorie retirée des Réglages reste sur les factures qui l'avaient déjà
+    if ($in('categorie') !== '' && $in('categorie') === ($x['categorie'] ?? '')) $cats[] = $x['categorie'];
     $x['categorie'] = in_array($in('categorie'), $cats, true) ? $in('categorie') : '';
   }
   if ($has('devise'))    $x['devise'] = preg_match('/^[A-Z]{3}$/', $in('devise')) ? $in('devise') : FLP_DEVISE;
@@ -90,7 +92,7 @@ if ($a === 'list') {
     'doublons' => flp_find_duplicates($items),
     'cfg' => [
       'site' => FLP_SITE, 'accent' => FLP_ACCENT, 'base' => flp_base_path(),
-      'categories' => FLP_CATEGORIES, 'categories_ventes' => FLP_CATEGORIES_VENTES, 'categories_docs' => FLP_CATEGORIES_DOCS,
+      'categories' => flp_cats('achat'), 'categories_ventes' => flp_cats('vente'), 'categories_docs' => flp_cats('doc'),
       'bareme' => FLP_BAREME_KM, 'keepYears' => FLP_KEEP_YEARS, 'trashDays' => FLP_TRASH_DAYS,
       'dropbox' => $role === 'admin' && !empty($S['dropbox']['refresh']),
       'version' => is_file(__DIR__ . '/VERSION') ? trim((string)file_get_contents(__DIR__ . '/VERSION')) : '',
@@ -116,7 +118,7 @@ if ($a === 'partage') {
 if ($a === 'meta') {
   $learn = flp_learn_public();
   flp_json(['ok' => true, 'role' => $role, 't' => flp_csrf(), 'learn' => $learn,
-    'cfg' => ['categories' => FLP_CATEGORIES, 'categories_ventes' => FLP_CATEGORIES_VENTES, 'categories_docs' => FLP_CATEGORIES_DOCS]]);
+    'cfg' => ['categories' => flp_cats('achat'), 'categories_ventes' => flp_cats('vente'), 'categories_docs' => flp_cats('doc')]]);
 }
 
 /* ===================================================================
@@ -438,6 +440,8 @@ if ($a === 'settings_get') {
     'last_backup' => $b ? basename(end($b)) : '', 'backups' => count($b),
     'version' => is_file(__DIR__ . '/VERSION') ? trim((string)file_get_contents(__DIR__ . '/VERSION')) : '',
     'last_sync' => $e['dbx_sync'] ?? 0,
+    'cats' => ['achat' => flp_cats('achat'), 'vente' => flp_cats('vente'), 'doc' => flp_cats('doc')],
+    'cats_used' => (function () { $u = []; foreach (flp_read()['items'] as $x) if (empty($x['trashed']) && $x['categorie'] !== '') { $k = in_array($x['sens'], ['vente', 'doc'], true) ? $x['sens'] : 'achat'; $u[$k][$x['categorie']] = ($u[$k][$x['categorie']] ?? 0) + 1; } return $u; })(),
   ]]);
 }
 if ($a === 'settings') {
@@ -460,6 +464,26 @@ if ($a === 'settings') {
   if (array_key_exists('dropbox_folder', $_POST)) { $f = '/' . trim(preg_replace('~[^\w À-ÿ./-]~u', '', $in('dropbox_folder')), '/'); $S['dropbox']['folder'] = $f === '/' ? '/Factures FLP' : $f; }
   if (array_key_exists('dropbox_when', $_POST)) $S['dropbox']['when'] = $in('dropbox_when') === 'tout' ? 'tout' : 'verifie';
   if (($_POST['dropbox_off'] ?? '') === '1') { $S['dropbox']['refresh'] = ''; $S['dropbox']['account'] = ''; }
+  /* Catégories modifiables (reçues, émises, documents) */
+  if (array_key_exists('cats', $_POST)) {
+    $c = json_decode((string)$_POST['cats'], true);
+    if (($_POST['cats'] ?? '') === 'defaut') unset($S['categories']);
+    elseif (!is_array($c)) flp_json(['ok' => false, 'msg' => 'Catégories illisibles.'], 422);
+    else {
+      $out = [];
+      foreach (['achat', 'vente', 'doc'] as $k) {
+        $list = [];
+        foreach ((array)($c[$k] ?? []) as $n) {
+          $n = trim(preg_replace('/\s+/u', ' ', (string)$n));
+          if ($n === '' || mb_strlen($n) > 50) continue;
+          if (!in_array(mb_strtolower($n), array_map('mb_strtolower', $list), true)) $list[] = $n;
+        }
+        if (!$list) flp_json(['ok' => false, 'msg' => 'Gardez au moins une catégorie dans chaque liste.'], 422);
+        $out[$k] = array_slice($list, 0, 60);
+      }
+      $S['categories'] = $out;
+    }
+  }
   flp_settings_save($S);
   flp_json(['ok' => true, 'msg' => 'Réglages enregistrés.']);
 }

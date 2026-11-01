@@ -874,6 +874,17 @@
         <label class="fld">Dossier dans Dropbox<input id="dFolder" value="${esc(s.dropbox_folder)}"></label>
         <div class="line"><button class="btn btn-sm" id="dSave">Enregistrer</button></div></details>`}
 
+      <h4>Catégories</h4>
+      <div class="box catbox">
+        <div class="seg seg3 cat-tabs"><button type="button" data-ct="achat" aria-pressed="true">Reçues</button><button type="button" data-ct="vente" aria-pressed="false">Émises</button><button type="button" data-ct="doc" aria-pressed="false">Documents</button></div>
+        <ul class="cat-list" id="catList"></ul>
+        <div class="cat-add"><input id="catNew" placeholder="Nouvelle catégorie" maxlength="50" autocomplete="off">
+          <select id="catWhere"><option value="achat">dans Reçues</option><option value="vente">dans Émises</option><option value="doc">dans Documents</option></select>
+          <button class="btn btn-sm" id="catAdd" type="button">Ajouter</button></div>
+        <div class="line"><button class="btn btn-sm btn-acc" id="catSave" type="button">Enregistrer les catégories</button><button class="btn btn-sm" id="catReset" type="button">Revenir aux catégories d’origine</button></div>
+        <p class="muted" style="margin:8px 0 0;font-size:12.5px">Retirer une catégorie ne change pas les factures qui l’ont déjà. Le menu ⇄ déplace une catégorie entre Reçues, Émises et Documents.</p>
+      </div>
+
       <h4>Sauvegardes</h4>
       <div class="box">Sauvegarde automatique chaque jour (les ${s.backups} dernières sont gardées, la plus récente : <code>${esc(s.last_backup || 'pas encore')}</code>)${s.dropbox_on ? ', copiée dans Dropbox' : ''}.
         <div class="line"><a class="btn btn-sm" href="${API}?a=backup">Télécharger toute ma sauvegarde</a><small class="muted">factures + données, en un fichier ZIP</small></div></div>
@@ -890,6 +901,46 @@
       onOpen: (w, close) => {
         const q = s => w.querySelector(s);
         const save = async (data, msg) => { try { await C.api('settings', data); C.toast(msg || 'Enregistré.', 'ok'); close(true); openSettings(); } catch (e) { C.toast(e.message, 'err'); } };
+        // ----- Catégories -----
+        const C3 = { achat: [...(s.cats?.achat || [])], vente: [...(s.cats?.vente || [])], doc: [...(s.cats?.doc || [])] };
+        const used = s.cats_used || {};
+        const LBL = { achat: 'Reçues', vente: 'Émises', doc: 'Documents' };
+        let ct = 'achat';
+        const drawCats = () => {
+          q('#catList').innerHTML = C3[ct].map((c, i) => `<li><span class="cn">${esc(c)}</span>${used[ct]?.[c] ? `<small>${used[ct][c]} fact.</small>` : ''}
+            <select data-mv="${i}" aria-label="Déplacer"><option value="">⇄</option>${['achat', 'vente', 'doc'].filter(k => k !== ct).map(k => `<option value="${k}">vers ${LBL[k]}</option>`).join('')}</select>
+            <button type="button" class="cat-up" data-up="${i}" aria-label="Monter" ${i ? '' : 'disabled'}>↑</button>
+            <button type="button" class="cat-del" data-del="${i}" aria-label="Retirer">✕</button></li>`).join('') || '<li class="muted">Aucune catégorie.</li>';
+          q('.cat-tabs').querySelectorAll('[data-ct]').forEach(b => b.setAttribute('aria-pressed', b.dataset.ct === ct));
+          q('#catWhere').value = ct;
+        };
+        q('.cat-tabs').addEventListener('click', e => { const b = e.target.closest('[data-ct]'); if (b) { ct = b.dataset.ct; drawCats(); } });
+        q('#catList').addEventListener('click', e => {
+          const d = e.target.closest('[data-del]'), u = e.target.closest('[data-up]');
+          if (d) { C3[ct].splice(+d.dataset.del, 1); drawCats(); }
+          if (u) { const i = +u.dataset.up; [C3[ct][i - 1], C3[ct][i]] = [C3[ct][i], C3[ct][i - 1]]; drawCats(); }
+        });
+        q('#catList').addEventListener('change', e => {
+          const m = e.target.closest('[data-mv]'); if (!m || !m.value) return;
+          const [c] = C3[ct].splice(+m.dataset.mv, 1); if (!C3[m.value].includes(c)) C3[m.value].push(c);
+          C.toast(`« ${c} » déplacée vers ${LBL[m.value]} (pensez à enregistrer).`); drawCats();
+        });
+        const addCat = () => {
+          const n = q('#catNew').value.trim().replace(/\s+/g, ' '), w = q('#catWhere').value;
+          if (!n) return;
+          if (C3[w].some(c => c.toLowerCase() === n.toLowerCase())) return C.toast('Cette catégorie existe déjà.', 'err');
+          C3[w].push(n); q('#catNew').value = ''; ct = w; drawCats();
+        };
+        q('#catAdd').onclick = addCat;
+        q('#catNew').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); addCat(); } });
+        q('#catSave').onclick = async () => {
+          try { await C.api('settings', { cats: JSON.stringify(C3) }); C.toast('Catégories enregistrées.', 'ok'); await load(); } catch (e) { C.toast(e.message, 'err'); }
+        };
+        q('#catReset').onclick = async () => {
+          if (!await C.confirmBox('Revenir aux catégories d’origine ? Vos ajouts et suppressions seront annulés (les factures gardent leur catégorie).', { ok: 'Revenir' })) return;
+          try { await C.api('settings', { cats: 'defaut' }); C.toast('Catégories d’origine rétablies.', 'ok'); await load(); close(true); openSettings(); } catch (e) { C.toast(e.message, 'err'); }
+        };
+        drawCats();
         q('#dSave2') && (q('#dSave2').onclick = () => save({ dropbox_when: q('#dWhen').value, dropbox_folder: q('#dFolder2').value.trim() }, 'Réglages Dropbox enregistrés.'));
         q('#gAuto') && (q('#gAuto').onchange = () => save({ github_auto: q('#gAuto').checked ? '1' : '0' }, q('#gAuto').checked ? 'Mises à jour automatiques activées.' : 'Mises à jour automatiques coupées.'));
         q('#gSave') && (q('#gSave').onclick = () => save({ github_repo: q('#gRepo').value.trim(), github_branch: q('#gBranch').value.trim() || 'main', github_token: q('#gToken').value.trim() }, 'Liaison GitHub enregistrée.'));

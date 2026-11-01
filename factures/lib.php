@@ -283,7 +283,14 @@ function flp_file_path(array $x): string { return flp_files_dir() . '/' . $x['id
 function flp_thumb_path(int $id): string { return flp_thumbs_dir() . '/' . $id . '.jpg'; }
 /* Nom du fichier : date_fournisseur_montant.pdf — un numéro n'est ajouté (-2, -3…) que si une
    autre facture porte exactement le même nom (même jour, même fournisseur, même montant). */
-function flp_cats(string $sens): array { return $sens === 'vente' ? FLP_CATEGORIES_VENTES : ($sens === 'doc' ? FLP_CATEGORIES_DOCS : FLP_CATEGORIES); }
+/* Catégories : celles choisies dans Réglages, sinon celles par défaut (config.php) */
+function flp_cats_default(string $sens): array { return $sens === 'vente' ? FLP_CATEGORIES_VENTES : ($sens === 'doc' ? FLP_CATEGORIES_DOCS : FLP_CATEGORIES); }
+function flp_cats(string $sens): array {
+  static $S = null; if ($S === null) $S = flp_settings();
+  $k = in_array($sens, ['vente', 'doc'], true) ? $sens : 'achat';
+  $c = $S['categories'][$k] ?? null;
+  return is_array($c) && $c ? array_values($c) : flp_cats_default($k);
+}
 function flp_nice_base(array $x): string {
   $m = $x['montant'] !== null ? '_' . number_format((float)$x['montant'], 2, ',', '') : '';
   return ($x['date'] ?: 'sans-date') . '_' . flp_slug($x['societe'] ?: 'facture') . $m;
