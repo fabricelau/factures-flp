@@ -383,3 +383,9 @@ b.pos{color:var(--verif)}b.neg{color:#ff8a7a}
 .bk-stats .stat:last-child{grid-column:1/-1}
 @media (min-width:760px){.bk-stats{grid-template-columns:1fr 1fr 1fr}.bk-stats .stat:last-child{grid-column:auto}}
 #bankView{max-width:100%;overflow-x:hidden}
+
+/* Total de la recherche (Relevés) */
+.bk-sum{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:4px 0 6px;padding:12px 14px;border-radius:12px;border:1.5px solid var(--acc);background:color-mix(in srgb,var(--acc) 12%,transparent);color:var(--acc)}
+.bk-sum span{flex-basis:100%;font-size:13px;color:color-mix(in srgb,var(--acc) 80%,var(--bone))}
+.bk-sum b{font:800 24px/1.1 var(--dsp);font-variant-numeric:tabular-nums}
+.bk-sum small{font-size:12.5px}

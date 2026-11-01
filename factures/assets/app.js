@@ -1060,8 +1060,11 @@
       <div class="bk-tools"><div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="bkQ" type="search" placeholder="Rechercher : libellé, montant, date…" value="${esc(S.bankQ)}" autocomplete="off"></div>
         <div class="filters">${[['all', 'Toutes'], ['in', 'Entrées'], ['out', 'Dépenses'], ['noproof', 'Sans facture']].map(([k, l]) => `<button class="chip" data-bf="${k}" aria-pressed="${S.bankF === k}">${l}</button>`).join('')}
         <button class="chip" id="bkXlsx" type="button">⬇ Excel</button></div></div>
+      ${q ? (() => { const fi = list.filter(t => t.m > 0).reduce((a, t) => a + t.m, 0), fo = list.filter(t => t.m < 0).reduce((a, t) => a - t.m, 0);
+        return `<div class="bk-sum"><span>${list.length} opération${list.length > 1 ? 's' : ''} trouvée${list.length > 1 ? 's' : ''} pour « ${esc(S.bankQ.trim())} » en ${Y}</span>
+          <b>Total : ${sgn(fi - fo)}</b>${fi && fo ? `<small>dépenses −${eur(fo)} · entrées +${eur(fi)}</small>` : ''}</div>`; })() : ''}
       <div class="bk-tx">${[...groups].map(([k, g]) => { const [y, m] = k.split('-'); const gi = g.filter(t => t.m > 0).reduce((a, t) => a + t.m, 0), go = g.filter(t => t.m < 0).reduce((a, t) => a - t.m, 0);
-        return `<section><div class="month-h"><h2>${MOIS[+m]} ${y}</h2><span class="n">${g.length} op.</span><span class="tot"><span class="pos">+${eur(gi)}</span> <span class="neg">−${eur(go)}</span></span></div>
+        return `<section><div class="month-h"><h2>${MOIS[+m]} ${y}</h2><span class="n">${g.length} op.</span><span class="tot">${gi ? `<span class="pos">+${eur(gi)}</span> ` : ''}${go ? `<span class="neg">−${eur(go)}</span>` : ''}</span></div>
         ${g.map(t => { const x = match.get(t.id); return `<div class="bk-row"><span class="bd">${frDate(t.d).slice(0, 5)}</span><span class="bl">${esc(t.l)}${x ? `<button type="button" class="bk-link" data-open="${x.id}">📎 ${esc(x.societe || 'facture')}</button>` : ''}</span><span class="bm ${t.m > 0 ? 'pos' : 'neg'}">${sgn(t.m)}</span></div>`; }).join('')}</section>`; }).join('') || '<p class="empty">Aucune opération ne correspond.</p>'}</div>` : ''}`;
   }
   // événements de l'onglet
