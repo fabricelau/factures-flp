@@ -336,3 +336,50 @@ body.offline #impBtn{opacity:.4;pointer-events:none}
 .cat-add{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
 .cat-add input{flex:1;min-width:140px;background:var(--ink2);border:1px solid var(--line);color:var(--bone);border-radius:8px;padding:9px 11px;font-size:15px}
 .cat-add select{background:var(--ink2);border:1px solid var(--line);color:var(--bone);border-radius:8px;padding:8px}
+
+/* Relevés bancaires */
+#bankView{padding:14px var(--g) 40px}
+.bk-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.bk-years{display:flex;gap:6px;flex-wrap:wrap}
+.bk-stats{padding:12px 0 0!important}
+.bk-in b{color:var(--verif)}.bk-out b{color:#ff8a7a}
+.pos{color:var(--verif)}.neg{color:#ff8a7a}
+b.pos{color:var(--verif)}b.neg{color:#ff8a7a}
+.bk-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:14px}
+@media (min-width:820px){.bk-grid{grid-template-columns:1.2fr 1fr}}
+.bk-card{background:var(--ink2);border:1px solid var(--line);border-radius:12px;padding:14px}
+.bk-card h3,.bk-h{margin:0 0 10px;font:800 15px/1.1 var(--dsp);text-transform:uppercase;letter-spacing:.03em}
+.bk-h{margin:22px 0 8px}.bk-h small{font:600 12px var(--body);color:var(--mute);margin-left:6px}
+.bk-months{display:grid;grid-template-columns:repeat(12,1fr);gap:4px;height:120px;align-items:end}
+.bk-m{display:flex;flex-direction:column;align-items:center;height:100%}
+.bk-bars{flex:1;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:2px}
+.bk-bars i{display:block;width:42%;max-width:9px;border-radius:3px 3px 0 0;min-height:1px}
+.bk-bars .in,.bk-leg .in{background:var(--verif)}.bk-bars .out,.bk-leg .out{background:#ff8a7a}
+.bk-m span{font-size:9.5px;color:var(--mute);margin-top:4px;text-transform:capitalize}
+.bk-leg{margin:8px 0 0;font-size:12px;color:var(--mute);display:flex;align-items:center;gap:6px}
+.bk-leg i{display:inline-block;width:10px;height:10px;border-radius:2px}
+.bars .fill.out{background:#ff8a7a}
+.bk-proof{margin:10px 0 0;font-size:13px;color:var(--mute)}
+.linkish{background:none;border:0;padding:0;color:var(--acc);font:inherit;text-decoration:underline;cursor:pointer}
+.bk-st{display:flex;flex-direction:column;gap:8px}
+.bk-stc{position:relative;display:grid;grid-template-columns:1fr auto;gap:2px 10px;text-align:left;background:var(--ink2);border:1px solid var(--line);border-radius:12px;padding:12px 56px 12px 14px;color:var(--bone);font:inherit;cursor:pointer}
+.bk-stc b{font-size:15px}.bk-stc span:not(.dl){grid-column:1;font-size:12.5px;color:var(--mute)}
+.bk-stc em{grid-column:2;grid-row:1/3;align-self:center;font-style:normal;font-size:12px;color:var(--mute)}
+.bk-stc em.ok{color:var(--verif)}.bk-stc em.ko{color:var(--acc)}
+.bk-stc .dl{position:absolute;right:10px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:36px;height:36px;border-radius:9px;border:1px solid var(--line);color:var(--mute)}
+.bk-stc .dl svg{width:16px;height:16px}
+.bk-tools{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
+.bk-tx section{margin-top:10px}
+.bk-row{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:9px 2px;border-bottom:1px solid var(--line);font-size:14px}
+.bk-row .bd{color:var(--mute);font-variant-numeric:tabular-nums;font-size:12.5px}
+.bk-row .bl{min-width:0;overflow-wrap:anywhere}
+.bk-row .bm{font:700 14.5px var(--dsp);font-variant-numeric:tabular-nums;white-space:nowrap}
+.bk-link{display:inline-block;margin-left:6px;border:1px solid var(--line);background:var(--ink2);color:var(--mute);border-radius:6px;padding:1px 6px;font-size:11.5px;cursor:pointer}
+.bk-tx .month-h .tot{font-size:13px}
+
+.bk-stats{display:grid!important;grid-template-columns:1fr 1fr;gap:8px}
+.bk-stats .stat{min-width:0}
+.bk-stats .stat b{font-size:clamp(17px,5vw,26px);white-space:nowrap}
+.bk-stats .stat:last-child{grid-column:1/-1}
+@media (min-width:760px){.bk-stats{grid-template-columns:1fr 1fr 1fr}.bk-stats .stat:last-child{grid-column:auto}}
+#bankView{max-width:100%;overflow-x:hidden}

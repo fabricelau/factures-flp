@@ -21,8 +21,8 @@
   const saveUi = () => { try { localStorage.setItem('flp-ui', JSON.stringify({ view: S.view, sort: S.sort })); } catch (e) {} };
   const byId = id => S.items.find(x => +x.id === +id);
   const cats = sens => sens === 'vente' ? S.cfg.categories_ventes : sens === 'doc' ? (S.cfg.categories_docs || []) : S.cfg.categories;
-  const isDoc = x => x.sens === 'doc', isAchat = x => x.sens !== 'vente' && x.sens !== 'doc';
-  const sensLabel = x => x.sens === 'vente' ? 'Émise' : x.sens === 'doc' ? 'Document' : 'Reçue';
+  const isDoc = x => x.sens === 'doc', isBank = x => x.sens === 'banque', isAchat = x => x.sens !== 'vente' && x.sens !== 'doc' && x.sens !== 'banque';
+  const sensLabel = x => x.sens === 'vente' ? 'Émise' : x.sens === 'doc' ? 'Document' : x.sens === 'banque' ? 'Relevé' : 'Reçue';
   const thumbUrl = x => `${API}?a=thumb&id=${x.id}&r=${x.rot || 0}`;
   // adresse « parlante » : le fichier s'ouvre et se télécharge sous son vrai nom (date_fournisseur_montant.pdf)
   const fmt2 = v => v == null || v === '' ? '' : Number(v).toFixed(2).replace('.', ',');   // 68,1 → 68,10
@@ -31,13 +31,14 @@
   const num = v => { const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')); return isNaN(n) ? null : n; };
   const ymd = d => d.toISOString().slice(0, 10);
   // « à vérifier » = pas encore validée par vous (case verte) ; les frais km, saisis à la main, n'en ont pas besoin
-  const todo = x => x.type !== 'km' && x.sens !== 'doc' && !x.verifie;
+  const todo = x => x.type !== 'km' && x.sens !== 'doc' && x.sens !== 'banque' && !x.verifie;
   const dOf = x => x.date || (x.added || '').slice(0, 10);
 
   /* ===================== Chargement ===================== */
   async function load() {
     try {
       const d = await C.api('list');
+      S.bank = null;   // opérations bancaires rechargées à la prochaine ouverture de l'onglet Relevés
       Object.assign(S, { items: d.items, cfg: d.cfg, learn: d.learn || [], societes: d.societes || [], dup: new Set(d.doublons || []), trash: d.trash || 0 });
       fillAdv(); render();
       setOffline(d.offline);
@@ -90,7 +91,7 @@
   }
 
   /* ===================== Filtres ===================== */
-  function inTab(x) { return S.tab === 'vente' ? x.sens === 'vente' : S.tab === 'doc' ? isDoc(x) : isAchat(x); }
+  function inTab(x) { return S.tab === 'vente' ? x.sens === 'vente' : S.tab === 'doc' ? isDoc(x) : S.tab === 'banque' ? isBank(x) : isAchat(x); }
   function visible() {
     const a = S.adv, min = num(a.min), max = num(a.max);
     let r = S.items.filter(inTab);
@@ -134,6 +135,8 @@
 
   /* ===================== Rendu de la liste ===================== */
   function render() {
+    $('#bankView').hidden = S.tab !== 'banque';
+    if (S.tab === 'banque') { $('#listView').hidden = true; $('#bordView').hidden = true; renderBank(); return; }
     if (S.tab === 'bord') { $('#listView').hidden = true; $('#bordView').hidden = false; renderBord(); return; }
     $('#listView').hidden = false; $('#bordView').hidden = true;
     renderStats(); renderFilters();
@@ -247,10 +250,10 @@
         ${ro ? '' : `<div class="sheet-foot"><button type="button" class="btn btn-del" data-act="trash">Corbeille</button><button type="submit" class="btn btn-acc">Enregistrer</button></div>`}`;
     }
     const cs = cats(x.sens);
-    const vente = x.sens === 'vente', doc = x.sens === 'doc';
+    const vente = x.sens === 'vente', doc = x.sens === 'doc' || x.sens === 'banque', bank = x.sens === 'banque';
     return `<input type="hidden" name="id" value="${x.id}">
-      <label class="fld">Type<div class="seg seg3" data-seg="sens"><button type="button" data-v="achat" aria-pressed="${!vente && !doc}" ${dis}>Reçue</button><button type="button" data-v="vente" aria-pressed="${vente}" ${dis}>Émise</button><button type="button" data-v="doc" aria-pressed="${doc}" ${dis}>Document</button></div></label>
-      <input type="hidden" name="sens" value="${x.sens === 'vente' || doc ? x.sens : 'achat'}">
+      <label class="fld"${bank ? ' hidden' : ''}>Type<div class="seg seg3" data-seg="sens"><button type="button" data-v="achat" aria-pressed="${!vente && !doc}" ${dis}>Reçue</button><button type="button" data-v="vente" aria-pressed="${vente}" ${dis}>Émise</button><button type="button" data-v="doc" aria-pressed="${doc}" ${dis}>Document</button></div></label>
+      <input type="hidden" name="sens" value="${['vente', 'doc', 'banque'].includes(x.sens) ? x.sens : 'achat'}">
       <label class="fld">${doc ? 'Titre' : vente ? 'Client' : 'Fournisseur'}<input name="societe" list="socList" value="${esc(x.societe)}" class="${d('societe')}" ${dis}></label>
       <div class="money-only">
       <label class="fld fld-ttc">Montant TTC<div class="amt"><input name="montant" inputmode="decimal" value="${fmt2(x.montant_orig != null ? x.montant_orig : x.montant)}" class="${d('montant')}" ${dis}>
@@ -271,7 +274,7 @@
       <datalist id="socList">${[...new Set(S.items.filter(y => y.sens === x.sens).map(y => y.societe).filter(Boolean))].map(s => `<option value="${esc(s)}">`).join('')}</datalist>`;
   }
   function bindForm(form, x) {
-    form.classList.toggle('is-doc', x.sens === 'doc');
+    form.classList.toggle('is-doc', x.sens === 'doc' || x.sens === 'banque');
     form.querySelectorAll('[data-seg] button').forEach(b => b.onclick = () => {
       const v = b.dataset.v; form.sens.value = v;
       b.parentNode.querySelectorAll('button').forEach(o => o.setAttribute('aria-pressed', o === b));
@@ -552,6 +555,7 @@
     progTxt.textContent = txt; progEl.style.width = (pct ?? 30) + '%';
   }
   async function handleFiles(files, extra = {}) {
+    if (S.tab === 'banque') return bankImport(files, extra);
     files = files.filter(f => /^image\/|application\/pdf/.test(f.type) || /\.(heic|heif|pdf)$/i.test(f.name));
     if (!files.length) return;
     let ok = 0, dup = 0;
@@ -570,17 +574,18 @@
   }
   /* ===================== Importer : depuis l'iPhone ou directement depuis Dropbox ===================== */
   if (ADMIN) $('#impBtn').addEventListener('click', () => {
-    if (!S.cfg || !S.cfg.dropbox) { $('#imp').click(); return; }      // Dropbox pas relié : sélecteur de fichiers direct
+    const inp = S.tab === 'banque' ? $('#bankInput') : $('#imp');
+    if (!S.cfg || !S.cfg.dropbox) { inp.click(); return; }      // Dropbox pas relié : sélecteur de fichiers direct
     const w = document.createElement('div'); w.className = 'dlg';
     w.innerHTML = `<div class="dlg-bg"></div><div class="dlg-box imp-choice" role="dialog" aria-modal="true"><h3>Importer</h3>
       <div class="imp-opts">
-        <label class="imp-opt" for="imp"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg><b>Depuis l’iPhone</b><span>Photos, Fichiers</span></label>
+        <label class="imp-opt" for="${S.tab === 'banque' ? 'bankInput' : 'imp'}"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg><b>Depuis l’iPhone</b><span>Photos, Fichiers</span></label>
         <button type="button" class="imp-opt" id="impDbx"><svg viewBox="0 0 24 24"><path d="M7 3l5 3.2L7 9.4 2 6.2zM17 3l5 3.2-5 3.2-5-3.2zM2 12.6l5-3.2 5 3.2-5 3.2zM22 12.6l-5-3.2-5 3.2 5 3.2zM7 17l5 3.2 5-3.2-5-3.2z"/></svg><b>Depuis Dropbox</b><span>Vos dossiers</span></button>
       </div><div class="dlg-foot"><button type="button" class="btn" data-x>Annuler</button></div></div>`;
     document.body.appendChild(w);
     const close = () => w.remove();
     w.querySelector('.dlg-bg').onclick = close; w.querySelector('[data-x]').onclick = close;
-    w.querySelector('label[for=imp]').addEventListener('click', () => setTimeout(close, 50));   // le sélecteur de l'iPhone s'ouvre (même geste)
+    w.querySelector('label.imp-opt').addEventListener('click', () => setTimeout(close, 50));   // le sélecteur de l'iPhone s'ouvre (même geste)
     w.querySelector('#impDbx').onclick = () => { close(); openDropboxPicker(); };
   });
   async function openDropboxPicker() {
@@ -621,7 +626,7 @@
         const res = await fetch(`${API}?a=dbx_get&path=${encodeURIComponent(r[i].p)}`, { credentials: 'same-origin' });
         if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.msg || 'Téléchargement impossible.'); }
         const b = await res.blob();
-        const type = /\.hei[cf]$/i.test(r[i].n) ? 'image/heic' : (b.type || (/\.pdf$/i.test(r[i].n) ? 'application/pdf' : 'image/jpeg'));
+        const type = /\.hei[cf]$/i.test(r[i].n) ? 'image/heic' : /\.(csv|ofx|qfx|qif)$/i.test(r[i].n) ? 'text/plain' : (b.type || (/\.pdf$/i.test(r[i].n) ? 'application/pdf' : 'image/jpeg'));
         files.push(new File([b], r[i].n, { type }));
       } catch (e) { C.toast(`${r[i].n} : ${e.message}`, 'err'); }
     }
@@ -734,7 +739,7 @@
     } catch (e) { C.toast(e.message, 'err'); } finally { progress(''); }
   }
   function exportItems(from, to, sens) {
-    return S.items.filter(x => (sens === 'doc' ? isDoc(x) : !isDoc(x) && (!sens || (sens === 'vente' ? x.sens === 'vente' : isAchat(x)))) && (!from || dOf(x) >= from) && (!to || dOf(x) <= to))
+    return S.items.filter(x => (sens === 'doc' ? isDoc(x) : !isDoc(x) && !isBank(x) && (!sens || (sens === 'vente' ? x.sens === 'vente' : isAchat(x)))) && (!from || dOf(x) >= from) && (!to || dOf(x) <= to))
       .sort((a, b) => dOf(a).localeCompare(dOf(b)));
   }
   const rowsOf = list => list.map(x => ({
@@ -977,13 +982,152 @@
       } });
   }
 
+  /* ===================== Relevés bancaires ===================== */
+  // Opérations lues sur les relevés (chargées à l'ouverture de l'onglet)
+  S.bank = null; S.bankYear = ''; S.bankQ = ''; S.bankF = 'all';
+  async function loadBank() {
+    try { const j = await C.api('bank_list'); S.bank = j.tx || []; } catch (e) { S.bank = S.bank || []; if (e.message !== 'auth') C.toast(e.message, 'err'); }
+  }
+  const sgn = v => (v > 0 ? '+' : v < 0 ? '−' : '') + eur(Math.abs(v)).replace('-', '');
+  // Rapprochement : une dépense ↔ une facture reçue (une entrée ↔ une facture émise) de même montant, à ±15 jours
+  function matchBank(tx) {
+    const used = new Set(), out = new Map();
+    const pool = S.items.filter(x => !x.trashed && x.montant != null && (x.sens === 'vente' || isAchat(x)));
+    const days = (a, b) => Math.abs((new Date(a) - new Date(b)) / 864e5);
+    for (const t of tx) {
+      let best = null;
+      for (const x of pool) {
+        if (used.has(x.id) || (t.m < 0 ? x.sens === 'vente' : x.sens !== 'vente')) continue;
+        if (Math.abs(Math.abs(t.m) - x.montant) > 0.011) continue;
+        const dd = x.date ? days(x.date, t.d) : 99; if (dd > 15) continue;
+        if (!best || dd < best.dd) best = { x, dd };
+      }
+      if (best) { used.add(best.x.id); out.set(t.id, best.x); }
+    }
+    return out;
+  }
+  // nom « propre » d'un commerçant à partir du libellé bancaire (pour regrouper)
+  const merchant = l => /^(CHEQUE|CHQ)\b/i.test(l || '') ? 'CHÈQUES' : /^REMISE\s+(DE\s+)?CH/i.test(l || '') ? 'REMISES DE CHÈQUES' : (l || '').toUpperCase()
+    .replace(/^(PAIEMENT\s+)?(PAR\s+)?(CB|CARTE|CARTE X?\d+)\s*(\d{2}[\/.]?\d{2}(\s|$))?/, '')
+    .replace(/^(PRLV|PRELEVEMENT)\s+(SEPA\s+)?/, '').replace(/^(VIR(EMENT)?\s+(SEPA\s+|INST\s+)?(RECU|EMIS)?\s*\/?\s*(DE\s+)?)/, '')
+    .replace(/\b\d{4,}\b|\b\d{2}[\/.]\d{2}([\/.]\d{2,4})?\b/g, '').replace(/[\/*].*$/, '').replace(/\s+/g, ' ').trim().slice(0, 32) || 'Divers';
+  async function renderBank() {
+    const V = $('#bankView');
+    if (S.bank === null) { V.innerHTML = '<div class="loading">Chargement des relevés…</div>'; await loadBank(); }
+    const st = S.items.filter(isBank).sort((a, b) => (a.bq?.du || a.date || '').localeCompare(b.bq?.du || b.date || ''));
+    const years = [...new Set([...S.bank.map(t => t.d.slice(0, 4)), ...st.map(x => (x.date || '').slice(0, 4)).filter(Boolean)])].sort().reverse();
+    if (!S.bankYear || !years.includes(S.bankYear)) S.bankYear = years[0] || String(new Date().getFullYear());
+    const Y = S.bankYear, txY = S.bank.filter(t => t.d.startsWith(Y));
+    const inn = txY.filter(t => t.m > 0).reduce((a, t) => a + t.m, 0), out = txY.filter(t => t.m < 0).reduce((a, t) => a - t.m, 0);
+    const match = matchBank(txY);
+    const noProof = txY.filter(t => t.m < 0 && !match.has(t.id));
+    // par mois
+    const M = Array.from({ length: 12 }, () => ({ i: 0, o: 0 }));
+    txY.forEach(t => { const k = +t.d.slice(5, 7) - 1; if (t.m > 0) M[k].i += t.m; else M[k].o -= t.m; });
+    const mx = Math.max(1, ...M.map(m => Math.max(m.i, m.o)));
+    // principales dépenses par commerçant
+    const byM = {}; txY.filter(t => t.m < 0).forEach(t => { const k = merchant(t.l); byM[k] = (byM[k] || 0) - t.m; });
+    const top = Object.entries(byM).sort((a, b) => b[1] - a[1]).slice(0, 6), topMax = Math.max(1, ...top.map(t => t[1]));
+    // liste filtrée
+    const q = S.bankQ.trim().toLowerCase();
+    let list = txY.filter(t => (S.bankF === 'in' ? t.m > 0 : S.bankF === 'out' ? t.m < 0 : S.bankF === 'noproof' ? (t.m < 0 && !match.has(t.id)) : true));
+    if (q) { const qn = num(q); list = list.filter(t => t.l.toLowerCase().includes(q) || (qn !== null && Math.abs(Math.abs(t.m) - qn) < 0.005) || frDate(t.d).includes(q)); }
+    const groups = new Map(); list.forEach(t => { const k = t.d.slice(0, 7); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(t); });
+    const stY = st.filter(x => (x.date || '').startsWith(Y) || (x.bq?.du || '').startsWith(Y));
+    V.innerHTML = `
+      <div class="bk-head">
+        <div class="bk-years">${years.map(y => `<button class="chip" data-by="${y}" aria-pressed="${y === Y}">${y}</button>`).join('')}</div>
+        ${ADMIN ? `<button class="btn btn-acc btn-sm" id="bkImport" type="button"><svg viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>Importer un relevé</button>` : ''}
+      </div>
+      <div class="stats bk-stats">
+        <div class="stat bk-in"><b>${sgn(inn)}</b><span>entrées d’argent en ${Y}</span></div>
+        <div class="stat bk-out"><b>${sgn(-out)}</b><span>dépenses en ${Y}</span></div>
+        <div class="stat"><b class="${inn - out >= 0 ? 'pos' : 'neg'}">${sgn(inn - out)}</b><span>solde de l’année · ${txY.length} opération${txY.length > 1 ? 's' : ''}</span></div>
+      </div>
+      ${txY.length ? `<div class="bk-grid">
+        <div class="bk-card"><h3>Mois par mois</h3><div class="bk-months">${M.map((m, i) => `<div class="bk-m" title="${MOIS[i + 1]} : +${eur(m.i)} / −${eur(m.o)}"><div class="bk-bars"><i class="in" style="height:${(m.i / mx * 100).toFixed(1)}%"></i><i class="out" style="height:${(m.o / mx * 100).toFixed(1)}%"></i></div><span>${MOIS[i + 1].slice(0, 3)}</span></div>`).join('')}</div>
+          <p class="bk-leg"><i class="in"></i> entrées <i class="out"></i> dépenses</p></div>
+        <div class="bk-card"><h3>Principales dépenses</h3>${top.length ? `<div class="bars">${top.map(([k, v]) => `<div class="row"><span title="${esc(k)}">${esc(k)}</span><div class="track"><div class="fill out" style="width:${(v / topMax * 100).toFixed(1)}%"></div></div><span class="v">${eur(v)}</span></div>`).join('')}</div>` : '<p class="muted">Aucune dépense.</p>'}
+          <p class="bk-proof">${noProof.length ? `<button type="button" class="linkish" data-bf="noproof">${noProof.length} dépense${noProof.length > 1 ? 's' : ''} sans facture retrouvée</button> · ` : ''}${match.size} rapprochée${match.size > 1 ? 's' : ''} d’une facture</p></div>
+      </div>` : ''}
+      <h3 class="bk-h">Relevés ${Y} <small>${stY.length}</small></h3>
+      <div class="bk-st">${stY.length ? stY.map(x => { const q = x.bq || {}; return `<button class="bk-stc" data-id="${x.id}" type="button">
+          <b>${esc(x.societe || 'Relevé')}</b><span>${q.du ? frDate(q.du) + ' → ' + frDate(q.au) : frDate(x.date)} · ${q.n ?? 0} opération${(q.n ?? 0) > 1 ? 's' : ''}${q.doublons ? ` (${q.doublons} déjà lue${q.doublons > 1 ? 's' : ''})` : ''}</span>
+          <em class="${q.verif === 'ok' ? 'ok' : q.verif === 'ecart' ? 'ko' : ''}">${q.verif === 'ok' ? '✓ soldes vérifiés' : q.verif === 'ecart' ? '⚠ écart avec le solde' : q.n ? '' : '⚠ rien lu'}</em>
+          ${x.ext ? `<span class="dl" role="button" tabindex="0" data-share="${x.id}" aria-label="Télécharger"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span>` : ''}</button>`; }).join('') : `<p class="empty" style="padding:14px 0">${st.length ? 'Aucun relevé sur cette année.' : 'Aucun relevé pour l’instant. Importez le PDF de votre relevé (ou l’export CSV / OFX depuis le site de votre banque) : l’appli lit les opérations, les classe par date et calcule vos entrées et dépenses.'}</p>`}</div>
+      ${txY.length ? `<h3 class="bk-h">Opérations</h3>
+      <div class="bk-tools"><div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="bkQ" type="search" placeholder="Rechercher : libellé, montant, date…" value="${esc(S.bankQ)}" autocomplete="off"></div>
+        <div class="filters">${[['all', 'Toutes'], ['in', 'Entrées'], ['out', 'Dépenses'], ['noproof', 'Sans facture']].map(([k, l]) => `<button class="chip" data-bf="${k}" aria-pressed="${S.bankF === k}">${l}</button>`).join('')}
+        <button class="chip" id="bkXlsx" type="button">⬇ Excel</button></div></div>
+      <div class="bk-tx">${[...groups].map(([k, g]) => { const [y, m] = k.split('-'); const gi = g.filter(t => t.m > 0).reduce((a, t) => a + t.m, 0), go = g.filter(t => t.m < 0).reduce((a, t) => a - t.m, 0);
+        return `<section><div class="month-h"><h2>${MOIS[+m]} ${y}</h2><span class="n">${g.length} op.</span><span class="tot"><span class="pos">+${eur(gi)}</span> <span class="neg">−${eur(go)}</span></span></div>
+        ${g.map(t => { const x = match.get(t.id); return `<div class="bk-row"><span class="bd">${frDate(t.d).slice(0, 5)}</span><span class="bl">${esc(t.l)}${x ? `<button type="button" class="bk-link" data-open="${x.id}">📎 ${esc(x.societe || 'facture')}</button>` : ''}</span><span class="bm ${t.m > 0 ? 'pos' : 'neg'}">${sgn(t.m)}</span></div>`; }).join('')}</section>`; }).join('') || '<p class="empty">Aucune opération ne correspond.</p>'}</div>` : ''}`;
+  }
+  // événements de l'onglet
+  $('#bankView').addEventListener('click', async e => {
+    const y = e.target.closest('[data-by]'); if (y) { S.bankYear = y.dataset.by; return renderBank(); }
+    const f = e.target.closest('[data-bf]'); if (f) { S.bankF = f.dataset.bf; await renderBank(); if (f.dataset.bf === 'noproof') $('.bk-tx')?.scrollIntoView({ behavior: 'smooth' }); return; }
+    if (e.target.closest('#bkImport')) return $('#impBtn').click();
+    if (e.target.closest('#bkXlsx')) return exportBank();
+    const o = e.target.closest('[data-open]'); if (o) return openSheet(o.dataset.open);
+    if (e.target.closest('[data-share]')) return;
+    const c = e.target.closest('.bk-stc'); if (c) openSheet(c.dataset.id);
+  });
+  let bkT; $('#bankView').addEventListener('input', e => { if (e.target.id !== 'bkQ') return; clearTimeout(bkT); bkT = setTimeout(async () => { S.bankQ = e.target.value; const pos = e.target.selectionStart; await renderBank(); const i = $('#bkQ'); if (i) { i.focus(); i.setSelectionRange(pos, pos); } }, 250); });
+  if (ADMIN) $('#bankInput').addEventListener('change', e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) bankImport(f); });
+
+  // Import : lecture sur le téléphone, puis envoi du fichier et des opérations
+  async function bankImport(files, extra = {}) {
+    const res = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i], pre = files.length > 1 ? `${i + 1}/${files.length} · ` : '';
+      try {
+        progress(pre + 'Lecture du relevé…', (i + 0.3) / files.length * 100);
+        const r = await window.FLPBank.parse(f);
+        if (!r.tx.length) { C.toast(`${f.name} : ${r.warn || 'aucune opération trouvée. Si c’est un relevé, envoyez-le en PDF texte ou en CSV / OFX depuis le site de votre banque.'}`, 'err'); continue; }
+        progress(pre + 'Envoi…', (i + 0.7) / files.length * 100);
+        const fd = new FormData();
+        const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+        fd.set('file', isPdf ? f : new File([f], f.name, { type: 'text/plain' }), f.name || 'releve');
+        fd.set('sens', 'banque'); fd.set('source', extra.source || 'import'); fd.set('pages', 1); fd.set('categorie', 'Relevé bancaire');
+        fd.set('texte', r.tx.map(t => `${t.d} ${t.l} ${t.m}`).join('\n').slice(0, 20000)); fd.set('doutes', '');
+        if (isPdf) { try { const p = await C.readPdf(f); const th = await C.thumbOf(p.canvas); if (th) fd.set('thumb', th, 'thumb.jpg'); fd.set('pages', p.pages); } catch (e) {} }
+        const up = await C.api('upload', fd);
+        const sv = await C.api('bank_save', { id: up.item.id, tx: JSON.stringify(r.tx), meta: JSON.stringify(r.meta) });
+        res.push({ name: f.name, meta: r.meta, ajout: sv.ajout, doublons: sv.doublons, titre: sv.item?.societe, deja: sv.deja });
+      } catch (e) { C.toast(`${f.name} : ${e.message}`, 'err'); }
+    }
+    progress('');
+    if (!res.length) return;
+    await load(); await loadBank();
+    const y = res[res.length - 1].meta.au || res[res.length - 1].meta.du; if (y) S.bankYear = y.slice(0, 4);
+    render();
+    C.dialog({ title: res.length > 1 ? `${res.length} relevés importés` : 'Relevé importé', html: res.map(r => r.deja ? `<div class="box"><b>${esc(r.titre || r.name)}</b><br>Ce relevé était déjà importé : rien n’a été ajouté.</div>` : `<div class="box"><b>${esc(r.titre || r.name)}</b><br>
+      ${r.meta.du ? `Du ${frDate(r.meta.du)} au ${frDate(r.meta.au)}<br>` : ''}
+      ${r.meta.n} opération${r.meta.n > 1 ? 's' : ''} lue${r.meta.n > 1 ? 's' : ''}${r.doublons ? ` · ${r.doublons} déjà présente${r.doublons > 1 ? 's' : ''} (relevé précédent)` : ''}<br>
+      <span class="pos">Entrées +${eur(r.meta.entrees)}</span> · <span class="neg">Dépenses −${eur(r.meta.sorties)}</span><br>
+      ${r.meta.verif === 'ok' ? '<span class="ok-txt">✓ Contrôle réussi : ancien solde + entrées − dépenses = nouveau solde.</span>' : r.meta.verif === 'ecart' ? '<span class="neg">⚠ Les opérations lues ne collent pas exactement au solde du relevé : vérifiez s’il manque une ligne.</span>' : '<span class="muted">Pas de solde indiqué sur le relevé : contrôle impossible.</span>'}
+      ${r.meta.devine ? '<br><span class="muted">Le relevé n’a pas de colonnes Débit / Crédit séparées : le sens de quelques opérations a été deviné d’après leur libellé.</span>' : ''}</div>`).join('') });
+  }
+  async function exportBank() {
+    const Y = S.bankYear, tx = (S.bank || []).filter(t => t.d.startsWith(Y)), match = matchBank(tx);
+    if (!tx.length) return;
+    try {
+      const X = await C.lib('xlsx');
+      const rows = tx.map(t => ({ 'Date': t.d, 'Libellé': t.l, 'Entrée': t.m > 0 ? t.m : null, 'Dépense': t.m < 0 ? -t.m : null, 'Facture rapprochée': match.get(t.id)?.filename || match.get(t.id)?.societe || '' }));
+      const ws = X.utils.json_to_sheet(rows); ws['!cols'] = [{ wch: 11 }, { wch: 52 }, { wch: 12 }, { wch: 12 }, { wch: 40 }];
+      const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Opérations ' + Y);
+      X.writeFile(wb, `releves-${Y}.xlsx`);
+    } catch (e) { C.toast(e.message, 'err'); }
+  }
+
   /* ===================== Menu, onglets, événements ===================== */
   function setTab(t) {
     S.tab = t; S.filter = 'all'; S.adv = { cat: '', soc: '', min: '', max: '', from: '', to: '' };
     $$('#tabs [data-tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === t));
     if (S.selecting) setSelecting(false);
     ['fMin', 'fMax', 'fFrom', 'fTo'].forEach(id => $('#' + id).value = '');
-    if (t !== 'bord') fillAdv();
+    if (t !== 'bord' && t !== 'banque') fillAdv();
     render();
   }
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });

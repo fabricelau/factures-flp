@@ -43,6 +43,7 @@ $admin = flp_is_admin();
 <nav class="tabs" id="tabs" role="tablist">
   <button role="tab" data-tab="achat" aria-selected="true">Reçues</button>
   <button role="tab" data-tab="vente" aria-selected="false">Émises</button>
+  <button role="tab" data-tab="banque" aria-selected="false">Relevés</button>
   <button role="tab" data-tab="doc" aria-selected="false">Documents</button>
   <button role="tab" data-tab="bord" aria-selected="false">Tableau de bord</button>
 </nav>
@@ -88,6 +89,8 @@ $admin = flp_is_admin();
 </section>
 
 <section id="bordView" hidden></section>
+<section id="bankView" hidden></section>
+<input type="file" id="bankInput" accept=".pdf,.csv,.ofx,.qfx,.qif,.txt,application/pdf,text/csv,text/plain" multiple hidden>
 
 <!-- Barre de sélection multiple -->
 <div class="selbar" id="selbar" hidden>
@@ -151,6 +154,7 @@ $admin = flp_is_admin();
 <script>window.FLP = { base: <?= json_encode($base) ?>, t: <?= json_encode(flp_csrf()) ?>, admin: <?= $admin ? 'true' : 'false' ?> };</script>
 <script src="<?= flp_asset('assets/common.js') ?>"></script>
 <script src="<?= flp_asset('assets/extract.js') ?>"></script>
+<script src="<?= flp_asset('assets/bank.js') ?>"></script>
 <script src="<?= flp_asset('assets/app.js') ?>"></script>
 </body>
 </html>

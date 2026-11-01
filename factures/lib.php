@@ -271,8 +271,16 @@ function flp_ext_ok(string $mime): ?string {
   ][$mime] ?? null;
 }
 function flp_mime(string $ext): string {
-  return ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'heic' => 'image/heic', 'pdf' => 'application/pdf'][$ext] ?? 'application/octet-stream';
+  return ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'heic' => 'image/heic', 'pdf' => 'application/pdf',
+          'csv' => 'text/plain; charset=utf-8', 'ofx' => 'text/plain; charset=utf-8', 'qif' => 'text/plain; charset=utf-8', 'txt' => 'text/plain; charset=utf-8'][$ext] ?? 'application/octet-stream';
 }
+/* Relevés bancaires exportés en texte (CSV, OFX, QIF) : extension d'après le nom d'origine */
+function flp_ext_bank(string $mime, string $name): ?string {
+  $e = strtolower(pathinfo($name, PATHINFO_EXTENSION)); if ($e === 'qfx') $e = 'ofx';
+  return in_array($e, ['csv', 'ofx', 'qif', 'txt'], true) && preg_match('~^(text/|application/(octet-stream|csv|vnd\.ms-excel|x-ofx|ofx|xml))~', $mime) ? $e : null;
+}
+/* Opérations lues sur les relevés */
+function flp_bank_read(): array { return flp_json_read('banque.json', ['tx' => [], 'seq' => 0]); }
 function flp_num($v): ?float {
   $v = str_replace([' ', "\u{00a0}", "\u{202f}", ','], ['', '', '', '.'], trim((string)$v));
   if (!is_numeric($v)) return null;
@@ -284,9 +292,10 @@ function flp_thumb_path(int $id): string { return flp_thumbs_dir() . '/' . $id .
 /* Nom du fichier : date_fournisseur_montant.pdf — un numéro n'est ajouté (-2, -3…) que si une
    autre facture porte exactement le même nom (même jour, même fournisseur, même montant). */
 /* Catégories : celles choisies dans Réglages, sinon celles par défaut (config.php) */
-function flp_cats_default(string $sens): array { return $sens === 'vente' ? FLP_CATEGORIES_VENTES : ($sens === 'doc' ? FLP_CATEGORIES_DOCS : FLP_CATEGORIES); }
+function flp_cats_default(string $sens): array { return $sens === 'vente' ? FLP_CATEGORIES_VENTES : ($sens === 'doc' ? FLP_CATEGORIES_DOCS : ($sens === 'banque' ? ['Relevé bancaire'] : FLP_CATEGORIES)); }
 function flp_cats(string $sens): array {
   static $S = null; if ($S === null) $S = flp_settings();
+  if ($sens === 'banque') return ['Relevé bancaire'];
   $k = in_array($sens, ['vente', 'doc'], true) ? $sens : 'achat';
   $c = $S['categories'][$k] ?? null;
   return is_array($c) && $c ? array_values($c) : flp_cats_default($k);
@@ -548,7 +557,7 @@ function flp_backup_full(): ?string {
     if ($x['type'] !== 'piece' || !$x['ext']) continue;
     $p = flp_file_path($x);
     if (!is_file($p)) continue;
-    $dir = ($x['sens'] === 'vente' ? 'emises' : ($x['sens'] === 'doc' ? 'documents' : 'recues')) . '/' . ($x['year'] ?: 'sans-annee');
+    $dir = ($x['sens'] === 'vente' ? 'emises' : ($x['sens'] === 'doc' ? 'documents' : ($x['sens'] === 'banque' ? 'releves' : 'recues'))) . '/' . ($x['year'] ?: 'sans-annee');
     $z->addFile($p, 'pieces/' . $dir . '/' . flp_nice_name($x));
     $z->setCompressionName('pieces/' . $dir . '/' . flp_nice_name($x), ZipArchive::CM_STORE);
   }

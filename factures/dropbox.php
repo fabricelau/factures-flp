@@ -50,14 +50,14 @@ function flp_dbx_delete(string $rel): void {
 /* Rangement : Reçues (ou Émises) / 2026 / 01 - Janvier / 2026-01-15_fournisseur_montant_12.pdf */
 function flp_dbx_rel(array $x): string {
   static $mois = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
-  $top = $x['sens'] === 'vente' ? 'Émises' : ($x['sens'] === 'doc' ? 'Documents' : 'Reçues');
+  $top = $x['sens'] === 'vente' ? 'Émises' : ($x['sens'] === 'doc' ? 'Documents' : ($x['sens'] === 'banque' ? 'Relevés bancaires' : 'Reçues'));
   if (preg_match('/^(\d{4})-(\d{2})-\d{2}$/', (string)$x['date'], $m)) $dir = $m[1] . '/' . $m[2] . ' - ' . $mois[(int)$m[2]];
   else $dir = ($x['year'] ?: date('Y')) . '/Sans date';
   return $top . '/' . $dir . '/' . flp_nice_name($x);
 }
 /* Copie une pièce si elle n'y est pas encore (ou si elle a changé de nom ou de contenu) */
 /* ---------- Import depuis Dropbox : parcourir les dossiers, récupérer un fichier ---------- */
-const FLP_DBX_IMPORT_EXT = ['pdf', 'jpg', 'jpeg', 'png', 'heic', 'heif', 'webp'];
+const FLP_DBX_IMPORT_EXT = ['pdf', 'jpg', 'jpeg', 'png', 'heic', 'heif', 'webp', 'csv', 'ofx', 'qfx', 'qif'];
 function flp_dbx_list(string $path): array {
   $t = flp_dbx_token(); if (!$t) return ['ok' => false, 'msg' => 'Dropbox n’est pas connecté.'];
   $path = $path === '/' ? '' : rtrim($path, '/');
@@ -104,8 +104,8 @@ function flp_dbx_stream(string $path): void {
   }
   if (filesize($tmp) > FLP_MAX_UPLOAD) { @unlink($tmp); flp_json(['ok' => false, 'msg' => 'Fichier trop volumineux (40 Mo maximum).'], 422); }
   $mime = (new finfo(FILEINFO_MIME_TYPE))->file($tmp) ?: 'application/octet-stream';
-  if (!preg_match('~^(image/|application/pdf)~', $mime) && !in_array($ext, ['heic', 'heif'], true)) { @unlink($tmp); flp_json(['ok' => false, 'msg' => 'Ce fichier n’est ni une photo ni un PDF.'], 422); }
-  header('Content-Type: ' . $mime);
+  if (!preg_match('~^(image/|application/pdf)~', $mime) && !in_array($ext, ['heic', 'heif', 'csv', 'ofx', 'qfx', 'qif'], true)) { @unlink($tmp); flp_json(['ok' => false, 'msg' => 'Ce fichier n’est ni une photo ni un PDF.'], 422); }
+  header('Content-Type: ' . (in_array($ext, ['csv', 'ofx', 'qfx', 'qif'], true) ? 'text/plain; charset=utf-8' : $mime));
   header('Content-Length: ' . filesize($tmp));
   header('Cache-Control: no-store');
   header('X-Content-Type-Options: nosniff');
@@ -118,7 +118,7 @@ function flp_dbx_wanted(array $x): bool {
   if ($x['type'] !== 'piece' || !$x['ext'] || !empty($x['trashed'])) return false;
   // « vérifiée » = case verte « Vérifiée » cochée par vous dans la fiche
   // les documents (pas des factures) n'ont rien à vérifier : copiés dès l'envoi
-  return (flp_dbx_cfg()['when'] ?? 'verifie') === 'tout' || !empty($x['verifie']) || $x['sens'] === 'doc';
+  return (flp_dbx_cfg()['when'] ?? 'verifie') === 'tout' || !empty($x['verifie']) || in_array($x['sens'], ['doc', 'banque'], true);
 }
 /* Retire de Dropbox une pièce mise à la corbeille */
 function flp_dbx_unsync(array $x): void {

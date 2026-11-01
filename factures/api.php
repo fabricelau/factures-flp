@@ -11,7 +11,7 @@ $a = $_GET['a'] ?? '';
 $POST = $_SERVER['REQUEST_METHOD'] === 'POST';
 
 /* Actions qui modifient : réservées à l'admin, avec le jeton anti-falsification */
-$WRITE = ['upload','lu','save','km','bulk','trash','restore','delete','rotate','replace','settings','password','update_run','dropbox_sync','partage'];
+$WRITE = ['upload','lu','save','bank_save','km','bulk','trash','restore','delete','rotate','replace','settings','password','update_run','dropbox_sync','partage'];
 if (in_array($a, $WRITE, true) || $a === 'logout') {
   if (!$POST) flp_json(['ok' => false, 'msg' => 'Méthode refusée.'], 405);
   if ($a !== 'logout' && $role !== 'admin') flp_json(['ok' => false, 'msg' => 'Accès en lecture seule.'], 403);
@@ -33,7 +33,7 @@ $find = function (array $items, int $id) { foreach ($items as $x) if ((int)$x['i
 /* Champs communs à l'envoi et à l'enregistrement */
 function flp_apply_fields(array &$x, callable $in, bool $partial): void {
   $has = fn($k) => !$partial || array_key_exists($k, $_POST);
-  if ($has('sens'))      $x['sens'] = in_array($in('sens'), ['vente', 'doc'], true) ? $in('sens') : 'achat';
+  if ($has('sens'))      $x['sens'] = in_array($in('sens'), ['vente', 'doc', 'banque'], true) ? $in('sens') : 'achat';
   if ($has('societe'))   $x['societe'] = mb_substr($in('societe'), 0, 120);
   if ($has('date'))      $x['date'] = preg_match('/^\d{4}-\d{2}-\d{2}$/', $in('date')) ? $in('date') : '';
   if ($has('numero'))    $x['numero'] = mb_substr($in('numero'), 0, 60);
@@ -136,7 +136,7 @@ if ($a === 'upload') {
   $tmp = $_FILES['file']['tmp_name'];
   if (filesize($tmp) > FLP_MAX_UPLOAD) flp_json(['ok' => false, 'msg' => 'Fichier trop volumineux (40 Mo maximum).'], 422);
   $mime = (new finfo(FILEINFO_MIME_TYPE))->file($tmp) ?: '';
-  $ext = flp_ext_ok($mime);
+  $ext = flp_ext_ok($mime) ?: ($in('sens') === 'banque' ? flp_ext_bank($mime, (string)($_FILES['file']['name'] ?? '')) : null);
   if (!$ext) flp_json(['ok' => false, 'msg' => 'Format non accepté (photo ou PDF).'], 422);
   $hash = sha1_file($tmp);
 
@@ -174,7 +174,8 @@ if ($a === 'lu') {
                 'categorie' => $x['categorie'] === '', 'montant' => $x['montant'] === null,
                 'ht' => ($x['ht'] ?? null) === null, 'tva' => ($x['tva'] ?? null) === null, 'taux_tva' => ($x['taux_tva'] ?? null) === null];
       $empty['devise'] = $empty['montant'];
-      if ($x['sens'] === 'doc') $empty = ['date' => $x['date'] === ''];    // document : seulement le texte (recherche) et la date
+      if ($x['sens'] === 'doc') $empty = ['date' => $x['date'] === ''];
+      if ($x['sens'] === 'banque') $empty = [];    // document : seulement le texte (recherche) et la date
       $saved = $_POST;
       foreach ($empty as $k => $e) if (!$e || !array_key_exists($k, $_POST) || trim((string)$_POST[$k]) === '') unset($_POST[$k]);
       foreach (['sens', 'note', 'paiement'] as $k) unset($_POST[$k]);
@@ -242,7 +243,7 @@ if ($a === 'save') {
   });
   if (!$res) flp_json(['ok' => false, 'msg' => 'Facture introuvable.'], 404);
   flp_json(['ok' => true, 'item' => $res], 200, true);          // réponse tout de suite…
-  if ($res['type'] === 'piece' && $res['sens'] !== 'doc') flp_learn($res['societe'], $res['categorie'], $res['texte'], $res);
+  if ($res['type'] === 'piece' && !in_array($res['sens'], ['doc', 'banque'], true)) flp_learn($res['societe'], $res['categorie'], $res['texte'], $res);
   // …puis copie dans Dropbox de la facture vérifiée (ou renommage si ses infos ont changé)
   if (is_file(__DIR__ . '/dropbox.php')) { require_once __DIR__ . '/dropbox.php'; flp_dbx_after($res); }
   exit;
@@ -309,6 +310,7 @@ if ($a === 'delete') {
     return $gone;
   });
   if ($gone) { if ($gone['ext']) @unlink(flp_file_path($gone)); @unlink(flp_thumb_path($id)); }
+  if ($gone && $gone['sens'] === 'banque') { $B = flp_bank_read(); $B['tx'] = array_values(array_filter($B['tx'], fn($t) => (int)$t['r'] !== $id)); flp_json_write('banque.json', $B); }
   flp_json(['ok' => (bool)$gone]);
 }
 
@@ -377,10 +379,10 @@ if ($a === 'zip') {
   if (!class_exists('ZipArchive')) flp_json(['ok' => false, 'msg' => 'ZIP indisponible sur le serveur.'], 500);
   $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'] ?? '') ? $_GET['from'] : '0000-00-00';
   $to   = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to'] ?? '') ? $_GET['to'] : '9999-12-31';
-  $sens = in_array($_GET['sens'] ?? '', ['achat', 'vente', 'doc'], true) ? $_GET['sens'] : '';
+  $sens = in_array($_GET['sens'] ?? '', ['achat', 'vente', 'doc', 'banque'], true) ? $_GET['sens'] : '';
   $items = array_values(array_filter(flp_read()['items'], fn($x) => empty($x['trashed'])
     && ($x['date'] ?: substr($x['added'], 0, 10)) >= $from && ($x['date'] ?: substr($x['added'], 0, 10)) <= $to
-    && ($sens === '' ? $x['sens'] !== 'doc' : $x['sens'] === $sens)));     // « tout » = les factures (sans les documents)
+    && ($sens === '' ? !in_array($x['sens'], ['doc', 'banque'], true) : $x['sens'] === $sens)));     // « tout » = les factures (sans les documents)
   usort($items, fn($p, $q) => strcmp($p['date'], $q['date']));
   $zipPath = flp_tmp_dir() . '/export-' . bin2hex(random_bytes(4)) . '.zip';
   $z = new ZipArchive(); $z->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE);
@@ -390,7 +392,7 @@ if ($a === 'zip') {
   foreach ($items as $x) {
     $file = '';
     if ($x['type'] === 'piece' && $x['ext'] && is_file(flp_file_path($x))) {
-      $file = ($x['sens'] === 'vente' ? 'emises/' : ($x['sens'] === 'doc' ? 'documents/' : 'recues/')) . flp_nice_name($x);
+      $file = ($x['sens'] === 'vente' ? 'emises/' : ($x['sens'] === 'doc' ? 'documents/' : ($x['sens'] === 'banque' ? 'releves/' : 'recues/'))) . flp_nice_name($x);
       $z->addFile(flp_file_path($x), $file);
     }
     $csv .= implode(';', [$q($x['sens'] === 'vente' ? 'Émise' : ($x['sens'] === 'doc' ? 'Document' : 'Reçue')), $q($x['date']), $q($x['societe']), $q($x['numero']), $q($x['categorie']),
@@ -508,6 +510,70 @@ if ($a === 'update_check' || $a === 'update_run') {
 /* ===================================================================
    DROPBOX : envoyer maintenant ce qui manque
    =================================================================== */
+/* ===================================================================
+   RELEVÉS BANCAIRES : opérations lues sur le téléphone, gardées ici
+   =================================================================== */
+if ($a === 'bank_save') {
+  $id = (int)$in('id');
+  $tx = json_decode((string)($_POST['tx'] ?? ''), true);
+  $meta = json_decode((string)($_POST['meta'] ?? '{}'), true) ?: [];
+  if (!is_array($tx)) flp_json(['ok' => false, 'msg' => 'Opérations illisibles.'], 422);
+  $st = $find(flp_read()['items'], $id);
+  if (!$st || $st['sens'] !== 'banque') flp_json(['ok' => false, 'msg' => 'Relevé introuvable.'], 404);
+  $norm = fn($l) => preg_replace('/[^a-z0-9]+/', '', strtolower(iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $l) ?: $l));
+  $B = flp_bank_read();
+  $known = []; foreach ($B['tx'] as $t) if ((int)$t['r'] !== $id) $known[$t['k']] = true;
+  $B['tx'] = array_values(array_filter($B['tx'], fn($t) => (int)$t['r'] !== $id));   // relire un relevé remplace ses opérations
+  $seen = []; $added = 0; $dup = 0;
+  foreach (array_slice($tx, 0, 5000) as $t) {
+    $d = (string)($t['d'] ?? ''); $m = flp_num($t['m'] ?? null); $l = mb_substr(trim((string)($t['l'] ?? '')), 0, 200);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) || $m === null || $m == 0.0) continue;
+    $base = $d . '|' . number_format($m, 2, '.', '') . '|' . $norm($l);
+    $seen[$base] = ($seen[$base] ?? 0) + 1;
+    $k = $base . '|' . $seen[$base];
+    if (isset($known[$k])) { $dup++; continue; }       // déjà lue sur un autre relevé (périodes qui se chevauchent)
+    $B['tx'][] = ['id' => ++$B['seq'], 'r' => $id, 'd' => $d, 'l' => $l, 'm' => round($m, 2), 'k' => $k];
+    $added++;
+  }
+  usort($B['tx'], fn($a, $b) => strcmp($a['d'], $b['d']) ?: $a['id'] - $b['id']);
+  flp_json_write('banque.json', $B);
+  // même relevé importé une 2e fois (rien de nouveau, même fichier) : on ne garde pas le doublon
+  if ($added === 0 && $dup > 0) {
+    $twin = false; foreach (flp_read()['items'] as $y) if ((int)$y['id'] !== $id && $y['sens'] === 'banque' && empty($y['trashed']) && ($y['hash'] ?? '') === ($st['hash'] ?? '-')) $twin = $y;
+    if ($twin) {
+      flp_write(function (&$dd) use ($id) { $dd['items'] = array_values(array_filter($dd['items'], fn($x) => (int)$x['id'] !== $id)); });
+      if ($st['ext']) @unlink(flp_file_path($st)); @unlink(flp_thumb_path($id));
+      flp_json(['ok' => true, 'item' => $twin, 'ajout' => 0, 'doublons' => $dup, 'deja' => true]);
+    }
+  }
+  $num = fn($v) => is_numeric($v) ? round((float)$v, 2) : null;
+  $q = ['du' => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($meta['du'] ?? '')) ? $meta['du'] : '', 'au' => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($meta['au'] ?? '')) ? $meta['au'] : '',
+        'banque' => mb_substr((string)($meta['banque'] ?? ''), 0, 60), 'ancien' => $num($meta['ancien'] ?? null), 'nouveau' => $num($meta['nouveau'] ?? null),
+        'verif' => in_array($meta['verif'] ?? '', ['ok', 'ecart'], true) ? $meta['verif'] : '', 'entrees' => $num($meta['entrees'] ?? 0), 'sorties' => $num($meta['sorties'] ?? 0),
+        'n' => count($tx), 'ajout' => $added, 'doublons' => $dup, 'devine' => !empty($meta['devine'])];
+  $res = flp_write(function (&$dd) use ($id, $q) {
+    foreach ($dd['items'] as &$x) if ((int)$x['id'] === $id) {
+      $x['bq'] = $q; $x['categorie'] = 'Relevé bancaire'; $x['check'] = false; $x['montant'] = null;
+      if ($q['au'] || $q['du']) { $x['date'] = $q['au'] ?: $q['du']; $x['year'] = substr($x['date'], 0, 4); }
+      $mois = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+      $ref = $q['du'] ?: $x['date'];
+      if ($x['societe'] === '' || strpos($x['societe'], 'Relevé') === 0) $x['societe'] = 'Relevé ' . ($q['banque'] ? $q['banque'] . ' ' : '') . ($ref ? $mois[(int)substr($ref, 5, 2)] . ' ' . substr($ref, 0, 4) : '');
+      $x['filename'] = flp_nice_name($x, $dd['items']);
+      return $x;
+    }
+    return null;
+  });
+  flp_json(['ok' => true, 'item' => $res, 'ajout' => $added, 'doublons' => $dup], 200, true);
+  if ($res && is_file(__DIR__ . '/dropbox.php')) { require_once __DIR__ . '/dropbox.php'; flp_dbx_after($res); }
+  exit;
+}
+if ($a === 'bank_list') {
+  $live = []; foreach (flp_read()['items'] as $x) if ($x['sens'] === 'banque' && empty($x['trashed'])) $live[(int)$x['id']] = true;
+  $tx = array_values(array_filter(flp_bank_read()['tx'], fn($t) => isset($live[(int)$t['r']])));
+  foreach ($tx as &$t) unset($t['k']); unset($t);
+  flp_json(['ok' => true, 'tx' => $tx]);
+}
+
 /* Import depuis Dropbox : liste d'un dossier, puis contenu d'un fichier (réservé à l'administrateur) */
 if ($a === 'dbx_list' || $a === 'dbx_get') {
   if ($role !== 'admin') flp_json(['ok' => false, 'msg' => 'Accès réservé.'], 403);
