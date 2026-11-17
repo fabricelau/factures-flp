@@ -112,6 +112,7 @@ $admin = flp_is_admin();
     <div class="sheet-tools admin-only" id="sheetTools">
       <button class="btn btn-sm" data-act="rotl" title="Tourner à gauche">↺</button>
       <button class="btn btn-sm" data-act="rotr" title="Tourner à droite">↻</button>
+      <button class="btn btn-sm" data-act="crop">Recadrer</button>
       <button class="btn btn-sm" data-act="addpage">+ Ajouter une page</button>
       <button class="btn btn-sm" data-act="replace">Remplacer le fichier</button>
       <button class="btn btn-sm" data-act="relire">Relire</button>
@@ -154,6 +155,7 @@ $admin = flp_is_admin();
 <script>window.FLP = { base: <?= json_encode($base) ?>, t: <?= json_encode(flp_csrf()) ?>, admin: <?= $admin ? 'true' : 'false' ?> };</script>
 <script src="<?= flp_asset('assets/common.js') ?>"></script>
 <script src="<?= flp_asset('assets/extract.js') ?>"></script>
+<script src="<?= flp_asset('assets/docscan.js') ?>"></script>
 <script src="<?= flp_asset('assets/bank.js') ?>"></script>
 <script src="<?= flp_asset('assets/app.js') ?>"></script>
 </body>

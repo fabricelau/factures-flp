@@ -338,6 +338,7 @@
     $('#sheetView').innerHTML = sheetView(x);
     $('#sheetTools').hidden = !ADMIN || x.type === 'km';
     $('#sheetTools').querySelectorAll('[data-act^=rot]').forEach(b => b.hidden = !['jpg', 'png', 'webp', 'pdf'].includes(x.ext));
+    $('#sheetTools [data-act=crop]') && ($('#sheetTools [data-act=crop]').hidden = !['jpg', 'png', 'webp', 'pdf', 'heic'].includes(x.ext));
     const f = $('#sheetForm'); f.innerHTML = (x.verifie ? `<div class="vpill"><span class="vdot"></span>Vérifiée par vous le ${frDate(String(x.verifie).slice(0, 10))}</div>` : '') + (x.ext ? `<button type="button" class="btn btn-share" data-share="${x.id}"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>Exporter cette facture</button>` : '') + fieldHTML(x, !ADMIN) + `<p class="sheet-meta">${x.source === 'scan' ? 'Scannée' : x.source === 'partage' ? 'Partagée' : x.source === 'dropbox' ? 'Importée depuis Dropbox' : x.source === 'saisie' ? 'Saisie' : 'Importée'} le ${frDate((x.added || '').slice(0, 10))}${x.ext ? ` · <a href="${fileUrl(x, true)}">Télécharger</a>` : ''}${x.dbx ? ' · copiée dans Dropbox' : ''}</p>`;
     bindForm(f, x);
     $('#sheet').hidden = false;
@@ -361,6 +362,7 @@
     }
     if (act === 'replace') $('#replaceInput').click();
     if (act === 'addpage') $('#addPageInput').click();
+    if (act === 'crop') cropItem(cur);
     if (act === 'relire') relireForm(cur, $('#sheetForm'));
   });
   $('#replaceInput').addEventListener('change', async e => {
@@ -374,6 +376,92 @@
       C.toast('Fichier remplacé.', 'ok');
     } catch (err) { C.toast(err.message, 'err'); } finally { progress(''); }
   });
+  /* ===================== Recadrer une facture déjà enregistrée ===================== */
+  // 4 coins à placer (ou « Bords auto »), page par page pour un PDF ; le résultat est enregistré en PDF
+  async function cropItem(x) {
+    let pages;
+    try {
+      progress('Ouverture de la facture…');
+      const blob = await fetch(fileUrl(x), { credentials: 'same-origin' }).then(r => { if (!r.ok) throw new Error('Fichier introuvable.'); return r.blob(); });
+      const f = new File([blob], 'facture.' + x.ext, { type: blob.type || (x.ext === 'pdf' ? 'application/pdf' : 'image/jpeg') });
+      if (x.ext === 'pdf') { const r = await C.pdfPages(f, { side: 2400 }); if (r.total > r.canvases.length) throw new Error(`PDF de plus de ${r.canvases.length} pages : recadrage impossible ici.`); pages = r.canvases; }
+      else pages = [await C.imageCanvas(f, 3000)];
+    } catch (err) { progress(''); return C.toast(err.message || 'Ouverture impossible.', 'err'); }
+    progress('');
+    const S2 = window.FLPScan;
+    const st = pages.map(c => ({ src: c, pts: S2.inset(c.width, c.height, 0), deg: 0, changed: false }));
+    let pi = 0, useDoc = false;
+    const w = document.createElement('div'); w.className = 'crop';
+    w.innerHTML = `<div class="crop-top"><b>Recadrer</b><span id="cpPages"></span><button type="button" class="btn btn-sm" data-c="x">Annuler</button></div>
+      <div class="crop-stage" id="cpStage"><canvas id="cpCv"></canvas><svg id="cpSvg"></svg></div>
+      <p class="crop-hint">Faites glisser les 4 coins sur les bords de la feuille.</p>
+      <div class="crop-tools">
+        <button type="button" class="btn btn-sm" data-c="auto">Bords auto</button>
+        <button type="button" class="btn btn-sm" data-c="full">Toute l’image</button>
+        <button type="button" class="btn btn-sm" data-c="rot">↻ Tourner</button>
+        <label class="btn btn-sm crop-doc"><input type="checkbox" id="cpDoc"> Mode Document</label>
+      </div>
+      <div class="crop-foot"><button type="button" class="btn btn-acc" data-c="ok">Enregistrer le recadrage</button></div>`;
+    document.body.appendChild(w); document.body.classList.add('noscroll');
+    const cv = w.querySelector('#cpCv'), svg = w.querySelector('#cpSvg'), stage = w.querySelector('#cpStage');
+    let k = 1, ox = 0, oy = 0;
+    const draw = () => {
+      const s = st[pi], src = s.src;
+      const r = stage.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+      const pad = 20;   // marge : les coins posés au bord de l'image restent faciles à attraper
+      k = Math.min((r.width - 2 * pad) / src.width, (r.height - 2 * pad) / src.height); const dw = src.width * k, dh = src.height * k;
+      ox = (r.width - dw) / 2; oy = (r.height - dh) / 2;
+      cv.style.cssText = `left:${ox}px;top:${oy}px;width:${dw}px;height:${dh}px`;
+      cv.width = Math.round(dw * dpr); cv.height = Math.round(dh * dpr); cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height);
+      svg.setAttribute('viewBox', `0 0 ${r.width} ${r.height}`);
+      const P = s.pts.map(p => [ox + p.x * k, oy + p.y * k]);
+      svg.innerHTML = `<path class="crop-shade" fill-rule="evenodd" d="M0 0H${r.width}V${r.height}H0Z M${P.map(p => p.join(' ')).join(' L')}Z"/>
+        <polygon class="crop-q" points="${P.map(p => p.join(',')).join(' ')}"/>${P.map((p, i) => `<circle class="crop-h" data-i="${i}" cx="${p[0]}" cy="${p[1]}" r="15"/>`).join('')}`;
+      w.querySelector('#cpPages').innerHTML = st.length > 1 ? st.map((_, i) => `<button type="button" class="chip" data-pg="${i}" aria-pressed="${i === pi}">p.${i + 1}${st[i].changed ? ' ✓' : ''}</button>`).join('') : '';
+    };
+    // déplacement des coins (doigt ou souris)
+    let drag = -1;
+    svg.addEventListener('pointerdown', e => { const h = e.target.closest('.crop-h'); if (!h) return; drag = +h.dataset.i; svg.setPointerCapture(e.pointerId); e.preventDefault(); });
+    svg.addEventListener('pointermove', e => {
+      if (drag < 0) return; const r = stage.getBoundingClientRect(), s = st[pi];
+      s.pts[drag] = { x: Math.max(0, Math.min(s.src.width, (e.clientX - r.left - ox) / k)), y: Math.max(0, Math.min(s.src.height, (e.clientY - r.top - oy) / k)) };
+      s.changed = true; draw();
+    });
+    const up = () => { drag = -1; }; svg.addEventListener('pointerup', up); svg.addEventListener('pointercancel', up);
+    const close = () => { w.remove(); document.body.classList.remove('noscroll'); window.removeEventListener('resize', draw); };
+    window.addEventListener('resize', draw);
+    w.querySelector('#cpDoc').onchange = e => { useDoc = e.target.checked; };
+    w.addEventListener('click', async e => {
+      const pg = e.target.closest('[data-pg]'); if (pg) { pi = +pg.dataset.pg; return draw(); }
+      const c = e.target.closest('[data-c]'); if (!c) return;
+      const s = st[pi];
+      if (c.dataset.c === 'x') return close();
+      if (c.dataset.c === 'auto') { const d = S2.detect(s.src); s.pts = d.pts; s.changed = true; draw(); if (!d.found) C.toast('Bords non trouvés : placez les coins à la main.'); return; }
+      if (c.dataset.c === 'full') { s.pts = S2.inset(s.src.width, s.src.height, 0); s.changed = true; return draw(); }
+      if (c.dataset.c === 'rot') { s.src = S2.rotate(s.src, 90); s.pts = S2.inset(s.src.width, s.src.height, 0); s.deg = (s.deg + 90) % 360; s.changed = true; return draw(); }
+      if (c.dataset.c === 'ok') {
+        if (!st.some(p => p.changed) && !useDoc) return close();
+        try {
+          progress('Recadrage…');
+          const out = st.map(p => {
+            const full = p.pts.every((q, i) => Math.abs(q.x - [0, p.src.width, p.src.width, 0][i]) < 2 && Math.abs(q.y - [0, 0, p.src.height, p.src.height][i]) < 2);
+            let o = full ? p.src : S2.warp(p.src, p.pts, 2400);
+            if (useDoc) o = S2.filter(o);
+            return o;
+          });
+          progress('Création du PDF…');
+          const pdf = await C.toPdf(out, 'facture.pdf', 0.86);
+          const fd = new FormData(); fd.set('id', x.id); fd.set('file', pdf, 'facture.pdf'); fd.set('pages', out.length);
+          const th = await C.thumbOf(out[0]); if (th) fd.set('thumb', th, 'thumb.jpg');
+          progress('Enregistrement…');
+          const r = await C.api('replace', fd); replaceItem(r.item); cur = r.item; $('#sheetView').innerHTML = sheetView(cur); render();
+          close(); C.toast('Facture recadrée ✓', 'ok');
+        } catch (err) { C.toast(err.message || 'Recadrage impossible.', 'err'); } finally { progress(''); }
+      }
+    });
+    requestAnimationFrame(draw);
+  }
+
   /* Ajouter une ou plusieurs pages (photo ou PDF) à la fin de la facture : un seul PDF en sortie */
   $('#addPageInput').addEventListener('change', async e => {
     const add = [...e.target.files]; e.target.value = ''; if (!add.length || !cur) return;

@@ -389,3 +389,21 @@ b.pos{color:var(--verif)}b.neg{color:#ff8a7a}
 .bk-sum span{flex-basis:100%;font-size:13px;color:color-mix(in srgb,var(--acc) 80%,var(--bone))}
 .bk-sum b{font:800 24px/1.1 var(--dsp);font-variant-numeric:tabular-nums}
 .bk-sum small{font-size:12.5px}
+
+/* Recadrer une facture */
+.crop{position:fixed;inset:0;z-index:200;background:#0b0e10;display:flex;flex-direction:column;padding:max(10px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom))}
+.crop-top{display:flex;align-items:center;gap:10px;color:var(--bone);margin-bottom:8px}
+.crop-top b{font:800 18px var(--dsp);text-transform:uppercase}
+.crop-top #cpPages{flex:1;display:flex;gap:4px;overflow-x:auto}
+.crop-stage{position:relative;flex:1;min-height:0;touch-action:none}
+.crop-stage canvas{position:absolute}
+.crop-stage svg{position:absolute;inset:0;width:100%;height:100%}
+.crop-shade{fill:rgba(0,0,0,.55)}
+.crop-q{fill:none;stroke:var(--acc);stroke-width:2.5}
+.crop-h{fill:rgba(227,166,83,.25);stroke:var(--acc);stroke-width:3;cursor:grab}
+.crop-hint{margin:8px 0;text-align:center;font-size:13px;color:var(--mute)}
+.crop-tools{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.crop-doc{display:inline-flex;align-items:center;gap:6px}
+.crop-foot{display:flex;justify-content:center;margin-top:10px}
+.crop-foot .btn{min-width:240px;justify-content:center}
+body.noscroll{overflow:hidden}
